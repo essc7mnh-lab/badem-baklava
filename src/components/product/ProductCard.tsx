@@ -2,15 +2,22 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import { Plus, Heart } from "lucide-react";
+import { Plus, Heart, Clock } from "lucide-react";
 import { Product } from "@/types";
 import { useLanguage } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { useToast } from "@/context/ToastContext";
+import { royalSound } from "@/lib/sound";
+
+interface ExtendedProduct extends Product {
+  is_available?: boolean;
+  isOutOfStock?: boolean;
+  is_out_of_stock?: boolean;
+}
 
 interface ProductCardProps {
-  product: Product;
+  product: ExtendedProduct;
   onOpenDetail: (product: Product) => void;
 }
 
@@ -25,6 +32,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
   const title = language === "ar" ? product.titleAr : product.titleEn;
   const currencySymbol = language === "ar" ? "ر.س " : "SAR ";
   const favorited = isFavorite(product.id);
+
+  // التحقق من حالة نفاذ الكمية
+  const isSoldOut = Boolean(
+    product.is_available === false ||
+    product.isOutOfStock === true ||
+    product.is_out_of_stock === true
+  );
 
   // حساب نسبة الخصم الحقيقية إذا وجدت
   const discountPercent =
@@ -50,6 +64,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // منع الإضافة نهائياً في حال نفاذ الكمية
+    if (isSoldOut) return;
+
+    royalSound.playSuccessChime();
     addToCart(
       {
         id: product.id,
@@ -74,15 +93,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
       {/* إطار صورة المنتج الذكي مع شارة الخصم وزر المفضلة */}
       <div className="relative overflow-hidden rounded-2xl bg-white aspect-square w-full">
         
-        {/* تأثير وميض خافت أثناء تحميل الصورة لمنع الفراغ الأبيض */}
+        {/* تأثير وميض خافت أثناء تحميل الصورة */}
         {!imageLoaded && (
           <div className="absolute inset-0 bg-stone-100 animate-pulse" />
         )}
 
-        {/* ❤️ زر المفضلة التفاعلي */}
+        {/* زر المفضلة */}
         <button
+          type="button"
           onClick={handleFavoriteClick}
-          className="absolute top-2 left-2 rtl:left-2 rtl:right-auto ltr:right-2 ltr:left-auto z-10 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md transition transform active:scale-75 hover:scale-110 cursor-pointer"
+          className="absolute top-2 left-2 rtl:left-2 rtl:right-auto ltr:right-2 ltr:left-auto z-20 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md transition transform active:scale-75 hover:scale-110 cursor-pointer"
           title="إضافة للمفضلة"
         >
           <Heart
@@ -92,14 +112,24 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           />
         </button>
 
-        {/* 🏷️ شارة الخصم المحسوبة ديناميكياً */}
-        {discountPercent && (
-          <div className="absolute top-2 right-2 rtl:right-2 rtl:left-auto ltr:left-2 ltr:right-auto z-10 bg-[#4A0E17] text-[#E5C058] text-[10px] font-black px-2 py-0.5 rounded-full shadow-md">
+        {/* شارة الخصم */}
+        {discountPercent && !isSoldOut && (
+          <div className="absolute top-2 right-2 rtl:right-2 rtl:left-auto ltr:left-2 ltr:right-auto z-20 bg-[#4A0E17] text-[#E5C058] text-[10px] font-black px-2 py-0.5 rounded-full shadow-md">
             خصم {discountPercent}%
           </div>
         )}
 
-        {/* ⚡ مكون الصورة المطور - تم تحويله للتحميل الفوري المباشر (eager) لمنع تنبيهات الأداء */}
+        {/* شارة نفدت الكمية العائمة على الصورة من الخارج */}
+        {isSoldOut && (
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-[1.5px] z-10 flex items-center justify-center p-2">
+            <span className="bg-[#4A0E17]/95 text-amber-200 border border-[#C59B27]/40 text-[10px] font-black px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+              <Clock className="w-3 h-3 text-[#E5C058] animate-pulse" />
+              <span>{language === "ar" ? "نفدت الكمية" : "Sold Out"}</span>
+            </span>
+          </div>
+        )}
+
+        {/* صورة المنتج */}
         <Image
           src={product.image || "/hero-baklava.png"}
           alt={title || "صنف فاخر"}
@@ -110,7 +140,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           onLoad={() => setImageLoaded(true)}
           className={`object-cover rounded-2xl group-hover:scale-105 transition-all duration-500 ${
             imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-95"
-          }`}
+          } ${isSoldOut ? "grayscale-35 opacity-90" : ""}`}
         />
       </div>
 
@@ -121,7 +151,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
         </h4>
       </div>
 
-      {/* الأسعار وزر الإضافة السريعة */}
+      {/* الأسعار وزر الإضافة */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-baseline gap-1.5">
           <span className="text-xs sm:text-sm font-black text-[#4A0E17]">
@@ -135,13 +165,26 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           )}
         </div>
 
-        <button
-          onClick={handleQuickAdd}
-          className="w-7 h-7 rounded-full bg-[#4A0E17] hover:bg-[#36070E] text-white flex items-center justify-center shadow-md transition transform active:scale-90 hover:scale-110 cursor-pointer"
-          title="إضافة للسلة"
-        >
-          <Plus className="w-4 h-4 font-bold" />
-        </button>
+        {/* زر الإضافة أو شارة التعطيل عند نفاذ الكمية */}
+        {isSoldOut ? (
+          <button
+            type="button"
+            disabled
+            className="w-7 h-7 rounded-full bg-stone-200/90 text-stone-400 flex items-center justify-center border border-stone-300/80 cursor-not-allowed"
+            title={language === "ar" ? "نفدت الكمية مؤقتاً" : "Out of stock"}
+          >
+            <Clock className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleQuickAdd}
+            className="w-7 h-7 rounded-full bg-[#4A0E17] hover:bg-[#36070E] text-white flex items-center justify-center shadow-md transition transform active:scale-90 hover:scale-110 cursor-pointer"
+            title="إضافة للسلة"
+          >
+            <Plus className="w-4 h-4 font-bold" />
+          </button>
+        )}
       </div>
     </div>
   );

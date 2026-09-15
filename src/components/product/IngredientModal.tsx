@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useId } from "react";
+import React, { useState, useEffect, useId, useMemo } from "react";
 import Image from "next/image";
 import {
   X,
@@ -12,6 +12,9 @@ import {
   CheckCircle,
   Loader2,
   Send,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
 } from "lucide-react";
 import { Product } from "@/types";
 import { useLanguage } from "@/context/LanguageContext";
@@ -20,8 +23,24 @@ import { useToast } from "@/context/ToastContext";
 import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase/supabase";
 
+// واجهة متكاملة تجمع صيغ الفرونت إند وقاعدة البيانات معاً لمنع أخطاء TypeScript
+export interface ExtendedProduct extends Product {
+  images?: string[];
+  image_urls?: string[];
+  image_url?: string;
+  is_available?: boolean; 
+  is_out_of_stock?: boolean;
+  isOutOfStock?: boolean;
+  base_price?: number | string;
+  price?: number | string;
+  title_ar?: string;
+  title_en?: string;
+  description_ar?: string | null;
+  description_en?: string | null;
+}
+
 interface IngredientModalProps {
-  product: Product | any | null;
+  product: ExtendedProduct | null;
   onClose: () => void;
 }
 
@@ -34,6 +53,14 @@ interface ReviewItem {
   created_at: string;
 }
 
+interface IngredientObject {
+  icon?: string;
+  nameAr?: string;
+  name_ar?: string;
+  nameEn?: string;
+  name_en?: string;
+}
+
 export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClose }) => {
   const { language, t } = useLanguage();
   const isAr = language === "ar";
@@ -41,6 +68,9 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const { showToast } = useToast();
   const { userName, userPhone } = useUser();
   const reviewInputId = useId();
+
+  // مؤشر الصورة الحالية
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const [multiplier, setMultiplier] = useState(1);
   const [selectedWeightLabel, setSelectedWeightLabel] = useState(
@@ -54,15 +84,40 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  // إعادة ضبط خيارات الوزن عند فتح صنف جديد
+  // استخراج قائمة الصور
+  const imagesList = useMemo<string[]>(() => {
+    if (!product) return ["/hero-baklava.png"];
+
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      return product.images.filter(Boolean);
+    }
+    if (Array.isArray(product.image_urls) && product.image_urls.length > 0) {
+      return product.image_urls.filter(Boolean);
+    }
+    const single = product.image || product.image_url;
+    return single ? [single] : ["/hero-baklava.png"];
+  }, [product]);
+
+  const isSoldOut = Boolean(
+  product?.is_available === false ||
+  product?.isOutOfStock === true ||
+  product?.is_out_of_stock === true
+);
+
+  // إعادة ضبط الحالة بشكل غير متزامن لتفادي أخطاء React
   useEffect(() => {
-    if (product?.id) {
+    if (!product?.id) return;
+
+    const resetTimer = setTimeout(() => {
+      setCurrentImageIndex(0);
       setMultiplier(1);
       setSelectedWeightLabel(isAr ? "ربع كيلو (250g)" : "250g Quarter");
       setUserRating(5);
       setNewComment("");
       setReviewerName("");
-    }
+    }, 0);
+
+    return () => clearTimeout(resetTimer);
   }, [product?.id, isAr]);
 
   // إغلاق النافذة بزر Escape
@@ -74,7 +129,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  // جلب تقييمات المنتج من Supabase
+  // جلب تقييمات المنتج
   useEffect(() => {
     if (!product?.id) return;
     let isMounted = true;
@@ -89,7 +144,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
           .order("created_at", { ascending: false });
 
         if (isMounted && data && !error) {
-          setReviewsList(data);
+          setReviewsList(data as ReviewItem[]);
         }
       } catch (err) {
         console.error("Failed to load reviews:", err);
@@ -98,29 +153,42 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
       }
     };
 
-    fetchProductReviews();
+    const timer = setTimeout(() => {
+      void fetchProductReviews();
+    }, 0);
 
     return () => {
       isMounted = false;
+      clearTimeout(timer);
     };
   }, [product?.id]);
 
   if (!product) return null;
 
-  // تهيئة بيانات المنتج بأمان
   const basePrice = Number(product.basePrice ?? product.base_price ?? product.price ?? 0);
   const currentPrice = basePrice * multiplier;
-  const productImage = product.image || product.image_url || "/hero-baklava.png";
   const productTitleAr = product.titleAr || product.title_ar || "صنف فاخر";
   const productTitleEn = product.titleEn || product.title_en || "Signature Item";
   const productDescAr = product.descriptionAr || product.description_ar;
   const productDescEn = product.descriptionEn || product.description_en;
-  const productIngredients = Array.isArray(product.ingredients) ? product.ingredients : [];
+  const productIngredients: IngredientObject[] = Array.isArray(product.ingredients)
+    ? (product.ingredients as IngredientObject[])
+    : [];
 
   const averageRating =
     reviewsList.length > 0
       ? (reviewsList.reduce((acc, r) => acc + (Number(r.rating) || 5), 0) / reviewsList.length).toFixed(1)
       : "5.0";
+
+  const handlePrevImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentImageIndex((prev) => (prev === 0 ? imagesList.length - 1 : prev - 1));
+  };
+
+  const handleNextImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentImageIndex((prev) => (prev === imagesList.length - 1 ? 0 : prev + 1));
+  };
 
   const handleSelectPortion = (mult: number, labelAr: string, labelEn: string) => {
     setMultiplier(mult);
@@ -128,12 +196,14 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   };
 
   const handleAddToCart = (e: React.MouseEvent) => {
+    if (isSoldOut) return;
+
     addToCart(
       {
         id: product.id,
         title: isAr ? productTitleAr : productTitleEn,
         price: currentPrice,
-        image: productImage,
+        image: imagesList[0] || "/hero-baklava.png",
         portionNote: selectedWeightLabel,
       },
       e
@@ -143,7 +213,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     setIsCartOpen(true);
   };
 
-  // 🛡️ إرسال التقييم مع اشتراط البيانات والحد الأقصى (تعليقين فقط لكل عميل لكل صنف)
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !product?.id) return;
@@ -151,7 +220,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     const finalName = reviewerName.trim() || userName.trim();
     const finalPhone = userPhone?.trim() || "";
 
-    // التحقق من توفر الاسم ورقم الهاتف من ملف العميل الشخصي
     if (!finalName || !finalPhone) {
       showToast(
         isAr
@@ -164,7 +232,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
     setSubmittingReview(true);
     try {
-      // التحقق من عدد التعليقات السابقة لهذا العميل على هذا المنتج تحديداً
       const { data: existingReviews, error: countError } = await supabase
         .from("reviews")
         .select("id")
@@ -184,7 +251,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
         return;
       }
 
-      // إرسال التعليق الآمن بعد اجتياز الشروط
       const { data, error } = await supabase
         .from("reviews")
         .insert([
@@ -200,7 +266,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
         .single();
 
       if (data && !error) {
-        setReviewsList((prev) => [data, ...prev]);
+        setReviewsList((prev) => [data as ReviewItem, ...prev]);
         setNewComment("");
         setReviewerName("");
         showToast(
@@ -227,7 +293,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
       aria-modal="true"
       aria-label={isAr ? productTitleAr : productTitleEn}
     >
-      {/* خلفية الإغلاق عند النقر بالخارج */}
+      {/* خلفية الإغلاق */}
       <div
         className="absolute inset-0 cursor-pointer"
         onClick={onClose}
@@ -258,7 +324,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
           </p>
         </div>
 
-        {/* المحتوى الداخلي والتفاصيل */}
+        {/* المحتوى الداخلي */}
         <div className="overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-5 flex-1 overscroll-contain">
           
           {/* 1. تفكيك المكونات الطبيعية */}
@@ -270,7 +336,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                {productIngredients.map((ing: any, idx: number) => (
+                {productIngredients.map((ing, idx) => (
                   <div
                     key={idx}
                     className="bg-white p-2.5 rounded-2xl border border-stone-200/80 shadow-2xs flex flex-col items-center justify-center"
@@ -285,18 +351,81 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </section>
           )}
 
-          {/* 2. بطاقة الصورة والوصف الفاخر */}
-          <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-2xs border border-stone-200/90 flex flex-col items-center">
-            <div className="relative w-56 sm:w-64 aspect-4/3 rounded-2xl overflow-hidden shadow-md border border-stone-100 bg-stone-100">
+          {/* 2. بطاقة الصورة الكبيرة المتجاوبة مع السلايدر */}
+          <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-2xs border border-stone-200/90 flex flex-col items-center">
+            
+            <div className="relative w-full aspect-4/3 sm:aspect-16/10 rounded-2xl overflow-hidden shadow-sm border border-stone-200/60 bg-[#F7F2EB] group">
               <Image
-                src={productImage}
-                alt={isAr ? productTitleAr : productTitleEn}
+                src={imagesList[currentImageIndex] || "/hero-baklava.png"}
+                alt={`${isAr ? productTitleAr : productTitleEn} - ${currentImageIndex + 1}`}
                 fill
                 priority
-                quality={85}
-                sizes="(max-width: 640px) 224px, 256px"
-                className="object-cover"
+                quality={90}
+                sizes="(max-width: 640px) 100vw, 550px"
+                className={`object-cover transition-transform duration-500 ease-out group-hover:scale-105 ${
+                  isSoldOut ? "grayscale-35 opacity-90" : ""
+                }`}
               />
+
+              {/* 🌟 شارة نفدت الكمية الملكية العائمة */}
+              {isSoldOut && (
+                <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px] z-10 flex items-center justify-center p-4">
+                  <div className="bg-[#4A0E17]/95 border border-[#C59B27]/60 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-center animate-in zoom-in-95">
+                    <Clock className="w-4 h-4 text-[#E5C058] shrink-0 animate-pulse" />
+                    <div>
+                      <span className="text-xs sm:text-sm font-black text-amber-200 block">
+                        {isAr ? "نفدت الكمية مؤقتاً" : "Temporarily Sold Out"}
+                      </span>
+                      <span className="text-[10px] sm:text-[11px] text-stone-200 font-medium">
+                        {isAr ? "نخبز دفعة طازجة قادمة قريباً من الفرن ✨" : "A fresh batch is baking soon in the oven"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* أسهم التنقل بين الصور */}
+              {imagesList.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePrevImage}
+                    aria-label="Previous Image"
+                    className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/45 hover:bg-[#4A0E17] text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-md active:scale-90"
+                  >
+                    <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleNextImage}
+                    aria-label="Next Image"
+                    className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/45 hover:bg-[#4A0E17] text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-md active:scale-90"
+                  >
+                    <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </button>
+
+                  {/* شريط النقاط السفلية */}
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20 bg-black/40 backdrop-blur-xs px-2.5 py-1 rounded-full border border-white/10 shadow-xs">
+                    {imagesList.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCurrentImageIndex(idx);
+                        }}
+                        aria-label={`Go to slide ${idx + 1}`}
+                        className={`transition-all rounded-full cursor-pointer ${
+                          currentImageIndex === idx
+                            ? "w-4 h-1.5 bg-[#E5C058]"
+                            : "w-1.5 h-1.5 bg-white/60 hover:bg-white"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {(productDescAr || productDescEn) && (
@@ -353,10 +482,8 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </div>
           </div>
 
-          {/* 4. تجارب وتقييمات العملاء - تصميم ملكي فاخر ومطور */}
+          {/* 4. تجارب وتقييمات العملاء */}
           <div className="bg-white rounded-3xl p-5 border border-stone-200/90 space-y-5 shadow-2xs">
-            
-            {/* رأس قسم التقييمات والإحصائيات */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -384,7 +511,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               </div>
             </div>
 
-            {/* قائمة عرض التقييمات */}
             {loadingReviews ? (
               <div className="py-8 flex flex-col items-center justify-center gap-2 text-stone-400">
                 <Loader2 className="w-5 h-5 animate-spin text-[#4A0E17]" />
@@ -429,7 +555,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                     </div>
 
                     <div className="flex gap-0.5">
-                      {[...Array(Number(rev.rating) || 5)].map((_, i) => (
+                      {Array.from({ length: Number(rev.rating) || 5 }).map((_, i) => (
                         <Star key={i} className="w-3 h-3 text-amber-400 fill-amber-400" />
                       ))}
                     </div>
@@ -478,6 +604,9 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               )}
 
               <div className="flex gap-2">
+                <label htmlFor={reviewInputId} className="sr-only">
+                  {isAr ? "اكتب انطباعك وتجربتك بالتذوق" : "Write your review"}
+                </label>
                 <input
                   id={reviewInputId}
                   type="text"
@@ -527,14 +656,24 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleAddToCart}
-            className="flex-1 bg-[#C59B27] hover:bg-[#E5C058] active:scale-95 text-[#4A0E17] font-black py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
-          >
-            <ShoppingBag className="w-5 h-5 font-bold" />
-            <span>{t("addToCart")}</span>
-          </button>
+          {isSoldOut ? (
+            <div
+              className="flex-1 bg-stone-800/90 text-amber-200/80 border border-amber-500/30 font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed opacity-90 text-xs sm:text-sm"
+              title={isAr ? "هذا الصنف غير متوفر حالياً" : "Currently out of stock"}
+            >
+              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>{isAr ? "نفدت الكمية الملكية (انتظرونا قريباً)" : "Sold Out (Coming Soon)"}</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleAddToCart}
+              className="flex-1 bg-[#C59B27] hover:bg-[#E5C058] active:scale-95 text-[#4A0E17] font-black py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+            >
+              <ShoppingBag className="w-5 h-5 font-bold" />
+              <span>{t("addToCart")}</span>
+            </button>
+          )}
         </div>
 
       </div>

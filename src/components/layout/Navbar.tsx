@@ -14,6 +14,7 @@ import {
 import { useLanguage } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { useUser } from "@/context/UserContext";
+import { royalSound } from "@/lib/sound";
 
 export const Navbar: React.FC = () => {
   const { language, toggleLanguage } = useLanguage();
@@ -26,6 +27,7 @@ export const Navbar: React.FC = () => {
   } = useUser();
 
   const isAr = language === "ar";
+  const mapLink = "https://maps.app.goo.gl/WSoqTwxhk6684U7M6";
 
   return (
     <header className="w-full bg-[#4A0E17]/95 backdrop-blur-md text-white pt-3 pb-2.5 px-4 space-y-2.5 sticky top-0 z-40 shadow-lg border-b border-[#5E1420] transition-colors duration-300">
@@ -45,13 +47,19 @@ export const Navbar: React.FC = () => {
           </button>
 
           {/* شريط العنوان التفاعلي لسطح المكتب */}
-          <div className="hidden md:flex items-center gap-2 bg-white/10 border border-white/15 rounded-full px-4 py-1.5 text-xs text-stone-100 shadow-2xs backdrop-blur-xs select-none">
-            <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
+          <a
+            href={mapLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={isAr ? "عرض الموقع على خريطة جوجل" : "View location on Google Maps"}
+            className="hidden md:flex items-center gap-2 bg-white/10 border border-white/15 rounded-full px-4 py-1.5 text-xs text-stone-100 shadow-2xs backdrop-blur-xs select-none hover:bg-white/20 transition cursor-pointer group"
+          >
+            <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0 group-hover:scale-110 transition-transform" />
             <span className="font-medium">
               {isAr ? "الرياض - شارع التخصصي" : "Riyadh - Tahlia St"}
             </span>
             <ChevronDown className="w-3 h-3 text-stone-300 shrink-0" />
-          </div>
+          </a>
         </div>
 
         {/* المنتصف: الشعار الملكي الفاخر */}
@@ -77,9 +85,12 @@ export const Navbar: React.FC = () => {
         <div className="flex items-center gap-2 md:gap-2.5">
           
           {/* زر صمّم بوكسك الحصري لأجهزة الكمبيوتر */}
-          <button
+         <button
             type="button"
-            onClick={() => setIsMenuOpen(true)}
+            onClick={() => {
+              royalSound.playBoxOpenSound(); // 👈 تشغيل صوت فتح البوكس الفاخر
+              setIsMenuOpen(true);
+            }}
             aria-label={isAr ? "صمّم بوكسك الخاص" : "Custom Box Studio"}
             className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 border border-[#C59B27]/40 text-[#E5C058] text-xs font-bold transition-all shadow-xs group cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#E5C058]"
           >
@@ -143,9 +154,15 @@ export const Navbar: React.FC = () => {
 
       {/* شريط تحديد وتأكيد الموقع المخصص للهواتف المحمولة */}
       <div className="max-w-md mx-auto md:hidden">
-        <div className="bg-white/10 border border-white/15 rounded-2xl px-3.5 py-2 flex items-center justify-between shadow-2xs backdrop-blur-xs text-white">
+        <a
+          href={mapLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={isAr ? "عرض الموقع على خريطة جوجل" : "View location on Google Maps"}
+          className="bg-white/10 border border-white/15 rounded-2xl px-3.5 py-2 flex items-center justify-between shadow-2xs backdrop-blur-xs text-white hover:bg-white/20 transition cursor-pointer block group"
+        >
           <div className="flex items-center gap-2 text-xs truncate">
-            <MapPin className="w-4 h-4 text-[#E5C058] shrink-0" />
+            <MapPin className="w-4 h-4 text-[#E5C058] shrink-0 group-hover:scale-110 transition-transform" />
             <span className="font-medium truncate text-stone-100">
               {isAr
                 ? "التوصيل إلى: الرياض - شارع التخصصي"
@@ -153,7 +170,7 @@ export const Navbar: React.FC = () => {
             </span>
           </div>
           <ChevronDown className="w-4 h-4 text-stone-300 shrink-0" />
-        </div>
+        </a>
       </div>
     </header>
   );

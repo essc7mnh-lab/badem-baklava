@@ -7,6 +7,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Footer } from "@/components/layout/Footer";
 import { PromoCarousel } from "@/components/banner/PromoCarousel";
+import { BrandStoryMarquee } from "@/components/banner/BrandStoryMarquee";
 import { ProductCard } from "@/components/product/ProductCard";
 import { IngredientModal } from "@/components/product/IngredientModal";
 import { CartDrawer } from "@/components/cart/CartDrawer";
@@ -26,6 +27,22 @@ interface CategoryItem {
   name_ar: string;
   name_en: string;
   image_url: string;
+}
+// 1. أضف الحقول إلى الواجهة
+interface RawSupabaseProduct {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  category_slug: string;
+  base_price: string | number;
+  original_price?: string | number | null;
+  has_discount?: boolean | null;
+  image_url: string;
+  images?: string[];         // 👈 للصور المتعددة
+  is_available?: boolean;    // 👈 لحالة التوفر
+  description_ar?: string | null;
+  description_en?: string | null;
+  ingredients?: Product["ingredients"];
 }
 
 export default function Home() {
@@ -56,25 +73,37 @@ export default function Home() {
         ]);
 
         if (isMounted) {
-          if (prodData && !prodError) {
-            const formatted: Product[] = prodData.map((d: any) => ({
-              id: d.id,
-              titleAr: d.title_ar,
-              titleEn: d.title_en,
-              category: d.category_slug,
-              basePrice: parseFloat(d.base_price),
-              originalPrice: d.original_price ? parseFloat(d.original_price) : undefined,
-              hasDiscount: Boolean(d.has_discount),
-              image: d.image_url,
-              descriptionAr: d.description_ar,
-              descriptionEn: d.description_en,
-              ingredients: d.ingredients || [],
-            }));
+        if (prodData && !prodError) {
+            // إعادة بناء مصفوفة المنتجات بتوافق تايب سكريبت كامل
+            const rawList = prodData as unknown as RawSupabaseProduct[];
+           const formatted: Product[] = rawList.map((d) => ({
+  id: d.id,
+  titleAr: d.title_ar,
+  titleEn: d.title_en,
+  category: d.category_slug,
+  basePrice:
+    typeof d.base_price === "number"
+      ? d.base_price
+      : parseFloat(d.base_price) || 0,
+  originalPrice: d.original_price
+    ? typeof d.original_price === "number"
+      ? d.original_price
+      : parseFloat(d.original_price)
+    : undefined,
+  hasDiscount: Boolean(d.has_discount),
+  image: d.image_url,
+  images: Array.isArray(d.images) && d.images.length > 0 ? d.images : [d.image_url], // 👈 تمرير الصور
+  is_available: d.is_available ?? true, // 👈 تمرير حالة التوفر الحقيقية
+  isOutOfStock: d.is_available === false, // 👈 لربطها بالنافذة
+  descriptionAr: d.description_ar || "",
+  descriptionEn: d.description_en || "",
+  ingredients: (d.ingredients || []) as NonNullable<Product["ingredients"]>,
+}));
             setProductsData(formatted);
           }
 
           if (catData && catData.length > 0) {
-            setCategories(catData);
+            setCategories(catData as CategoryItem[]);
           }
         }
       } catch (err) {
@@ -91,7 +120,7 @@ export default function Home() {
     };
   }, []);
 
-  // فلترة المنتجات بالبحث والتصنيف باستخدام useMemo لسرعة المعالجة
+  // فلترة المنتجات بالبحث والتصنيف
   const filteredProducts = useMemo(() => {
     return productsData.filter((p) => {
       const matchCat = selectedCategory === "All" || p.category === selectedCategory;
@@ -126,21 +155,24 @@ export default function Home() {
           <Search className="w-4 h-4 md:w-5 md:h-5 text-stone-400 absolute top-1/2 -translate-y-1/2 right-3.5 rtl:right-3.5 ltr:left-3.5 pointer-events-none" />
         </div>
 
-        {/* Promo Banner */}
-        <PromoCarousel />
+        {/* Promo Banner & Brand Story Marquee */}
+        <div className="space-y-3">
+          <PromoCarousel onSelectCategory={(catSlug) => setSelectedCategory(catSlug)} />
+          <BrandStoryMarquee />
+        </div>
 
- {/* ✨ شريط الأقسام ثلاثي الأبعاد الفاخر */}
+        {/* ✨ شريط الأقسام ثلاثي الأبعاد الفاخر */}
         {categories.length > 0 && (
           <section className="pt-1" id="categories-section" dir={dir}>
-            <div className="w-full bg-[#FAF5ED]/95 backdrop-blur-md rounded-2xl sm:rounded-[2rem] border border-[#EADBCE] shadow-[0_8px_25px_-8px_rgba(74,14,23,0.06)] p-3 sm:p-5">
+            <div className="w-full bg-[#FAF5ED]/95 backdrop-blur-md rounded-2xl sm:rounded-4xl border border-[#EADBCE] shadow-[0_8px_25px_-8px_rgba(74,14,23,0.06)] p-3 sm:p-5">
               <div className="flex items-center justify-start gap-4 sm:gap-6 overflow-x-auto no-scrollbar px-1 py-1">
                 {/* زر عرض الكل */}
                 <button
                   onClick={() => setSelectedCategory("All")}
-                  className="group flex flex-col items-center justify-between min-w-[72px] sm:min-w-[85px] shrink-0 cursor-pointer transition-all select-none text-center"
+                  className="group flex flex-col items-center justify-between min-w-18 sm:min-w-21.25 shrink-0 cursor-pointer transition-all select-none text-center"
                 >
                   <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
-                    <div className="absolute bottom-1 w-3/4 h-2.5 bg-[#4A0E17]/15 rounded-full blur-[4px] pointer-events-none" />
+                    <div className="absolute bottom-1 w-3/4 h-2.5 bg-[#4A0E17]/15 rounded-full blur-xs pointer-events-none" />
                     <div
                       className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-transform duration-300 ${
                         selectedCategory === "All"
@@ -152,7 +184,7 @@ export default function Home() {
                     </div>
                   </div>
                   <span
-                    className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide truncate max-w-[80px] ${
+                    className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide truncate max-w-20 ${
                       selectedCategory === "All"
                         ? "text-[#4A0E17] font-black underline decoration-[#C59B27] decoration-2 underline-offset-4"
                         : "text-stone-600 font-bold group-hover:text-[#4A0E17]"
@@ -162,7 +194,7 @@ export default function Home() {
                   </span>
                 </button>
 
-                {/* قائمة الأقسام المرفوعة مع مجسمات الـ 3D وصور فائقة السرعة */}
+                {/* قائمة الأقسام */}
                 {categories.map((cat, index) => {
                   const isSelected = selectedCategory === cat.slug;
                   const catTitle = isAr ? cat.name_ar : cat.name_en;
@@ -171,7 +203,7 @@ export default function Home() {
                     <button
                       key={cat.id || cat.slug}
                       onClick={() => setSelectedCategory(isSelected ? "All" : cat.slug)}
-                      className="group flex flex-col items-center justify-between min-w-[72px] sm:min-w-[88px] shrink-0 cursor-pointer transition-all select-none text-center"
+                      className="group flex flex-col items-center justify-between min-w-18 sm:min-w-22 shrink-0 cursor-pointer transition-all select-none text-center"
                     >
                       <div className="relative w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 flex items-center justify-center">
                         <div className="relative w-full h-full">
@@ -192,7 +224,7 @@ export default function Home() {
                       </div>
 
                       <span
-                        className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide truncate max-w-[85px] ${
+                        className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide truncate max-w-21.25 ${
                           isSelected
                             ? "text-[#4A0E17] font-black underline decoration-[#C59B27] decoration-2 underline-offset-4"
                             : "text-stone-600 font-bold group-hover:text-[#4A0E17]"

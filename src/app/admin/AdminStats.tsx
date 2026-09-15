@@ -18,15 +18,19 @@ export const AdminStats: React.FC<AdminStatsProps> = ({
 }) => {
   const [currentDate, setCurrentDate] = useState<string>("");
 
-  // تهيئة التاريخ بعد تحميل المتصفح لتفادي خطأ عدم تطابق الخادم مع العميل (Hydration Mismatch)
+  // تهيئة التاريخ بشكل غير متزامن لتفادي خطأ Hydration وتجنب التنبيه
   useEffect(() => {
-    const formatted = new Date().toLocaleDateString("ar-SA", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    setCurrentDate(formatted);
+    const timer = setTimeout(() => {
+      const formatted = new Date().toLocaleDateString("ar-SA", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+      setCurrentDate(formatted);
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []);
 
   return (

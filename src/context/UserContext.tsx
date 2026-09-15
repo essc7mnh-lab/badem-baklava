@@ -11,6 +11,7 @@ import React, {
   ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase/supabase";
+import { CartItem } from "@/types";
 
 export interface SavedAddress {
   id: string;
@@ -24,10 +25,23 @@ export interface SavedAddress {
 export interface PastOrder {
   id: string;
   date: string;
-  items: any[];
+  items: (CartItem | Record<string, unknown>)[];
   totalAmount: number;
   status: string;
   paymentMethod: string;
+  phone?: string;
+  customerName?: string;
+}
+
+export interface NewOrderInput {
+  id: string;
+  items: (CartItem | Record<string, unknown>)[];
+  totalAmount: number;
+  paymentMethod: string;
+  status?: string;
+  phone?: string;
+  customerName?: string;
+  [key: string]: unknown;
 }
 
 export interface AppNotification {
@@ -38,6 +52,15 @@ export interface AppNotification {
   date: string;
   isRead: boolean;
   orderId?: string;
+}
+
+// واجهة صريحة لتحديثات الطلبات اللحظية من Supabase
+interface OrderPayloadRow {
+  id: string;
+  customer_phone: string;
+  status: string;
+  subtotal?: string | number;
+  total_amount?: string | number;
 }
 
 interface UserContextType {
@@ -52,7 +75,7 @@ interface UserContextType {
   addAddress: (addr: Omit<SavedAddress, "id">) => void;
   deleteAddress: (id: string) => void;
   orders: PastOrder[];
-  addOrder: (order: any) => Promise<void>;
+  addOrder: (order: NewOrderInput) => Promise<void>;
   resetAllUserData: () => void;
   syncPointsWithDatabase: () => Promise<void>;
   // النوافذ
@@ -73,7 +96,6 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-// مفاتيح التخزين المحددة لمنع تداخل أو مسح باقي بيانات المتجر
 const STORAGE_KEYS = {
   NAME: "badem_user_name",
   PHONE: "badem_user_phone",
@@ -97,42 +119,45 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // مرجع ثابت لمحرك الصوت لمنع تراكم الـ AudioContext في الذاكرة
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // 1️⃣ استرجاع البيانات بأمان عند بدء تشغيل المتصفح
+  // 1️⃣ استرجاع البيانات بأمان وبشكل غير متزامن لتفادي تعليق التصيير الأولي
   useEffect(() => {
-    try {
-      if (typeof window !== "undefined") {
-        const savedName = localStorage.getItem(STORAGE_KEYS.NAME);
-        const savedPhone = localStorage.getItem(STORAGE_KEYS.PHONE);
-        const savedAddresses = localStorage.getItem(STORAGE_KEYS.ADDRESSES);
-        const savedOrders = localStorage.getItem(STORAGE_KEYS.ORDERS);
-        const savedNotifs = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+    const loadTimer = setTimeout(() => {
+      try {
+        if (typeof window !== "undefined") {
+          const savedName = localStorage.getItem(STORAGE_KEYS.NAME);
+          const savedPhone = localStorage.getItem(STORAGE_KEYS.PHONE);
+          const savedAddresses = localStorage.getItem(STORAGE_KEYS.ADDRESSES);
+          const savedOrders = localStorage.getItem(STORAGE_KEYS.ORDERS);
+          const savedNotifs = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
 
-        if (savedName) setUserName(savedName);
-        if (savedPhone) setUserPhone(savedPhone);
-        if (savedAddresses) {
-          const parsed = JSON.parse(savedAddresses);
-          if (Array.isArray(parsed)) setAddresses(parsed);
+          if (savedName) setUserName(savedName);
+          if (savedPhone) setUserPhone(savedPhone);
+          if (savedAddresses) {
+            const parsed = JSON.parse(savedAddresses);
+            if (Array.isArray(parsed)) setAddresses(parsed);
+          }
+          if (savedOrders) {
+            const parsed = JSON.parse(savedOrders);
+            if (Array.isArray(parsed)) setOrders(parsed);
+          }
+          if (savedNotifs) {
+            const parsed = JSON.parse(savedNotifs);
+            if (Array.isArray(parsed)) setNotifications(parsed);
+          }
         }
-        if (savedOrders) {
-          const parsed = JSON.parse(savedOrders);
-          if (Array.isArray(parsed)) setOrders(parsed);
-        }
-        if (savedNotifs) {
-          const parsed = JSON.parse(savedNotifs);
-          if (Array.isArray(parsed)) setNotifications(parsed);
-        }
+      } catch (e) {
+        console.warn("Failed to load user state from localStorage:", e);
+      } finally {
+        setIsLoaded(true);
       }
-    } catch (e) {
-      console.warn("Failed to load user state from localStorage:", e);
-    } finally {
-      setIsLoaded(true);
-    }
+    }, 0);
+
+    return () => clearTimeout(loadTimer);
   }, []);
 
-  // 2️⃣ الحفظ التلقائي الآمن للبيانات عند أي تحديث بعد التحميل الأولي
+  // 2️⃣ الحفظ التلقائي عند التحديث بعد اكتمال التحميل
   useEffect(() => {
     if (!isLoaded || typeof window === "undefined") return;
 
@@ -147,13 +172,14 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [addresses, orders, userName, userPhone, notifications, isLoaded]);
 
-  // تشغيل نغمة الإشعار باستخدام Web Audio API النظيف
+  // تشغيل نغمة الإشعار الملكية
   const playNotificationSound = useCallback(() => {
     if (typeof window === "undefined") return;
 
     try {
       const AudioCtxClass =
-        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
       if (!AudioCtxClass) return;
 
@@ -171,8 +197,8 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const gain = ctx.createGain();
 
       osc.type = "sine";
-      osc.frequency.setValueAtTime(523.25, now); // نغمة C5 الملكية
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.18); // نغمة G5
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.18);
 
       gain.gain.setValueAtTime(0.15, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
@@ -183,11 +209,11 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       osc.start(now);
       osc.stop(now + 0.55);
     } catch {
-      // تجاهل حظر الصوت التلقائي من المتصفح دون تعليق التطبيق
+      // تجاهل الحظر التلقائي من المتصفح
     }
   }, []);
 
-  // إضافة إشعار جديد إلى القائمة وتشغيل النغمة
+  // إضافة إشعار جديد
   const pushNotification = useCallback(
     (title: string, message: string, type: "order" | "points" | "promo", orderId?: string) => {
       const newNotif: AppNotification = {
@@ -206,7 +232,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [playNotificationSound]
   );
 
-  // حساب ومزامنة النقاط مع قاعدة البيانات بناءً على الطلبات المكتملة
+  // مزامنة النقاط مع قاعدة البيانات
   const syncPointsWithDatabase = useCallback(async () => {
     const cleanPhone = userPhone.trim();
     if (!cleanPhone) {
@@ -232,7 +258,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (completedOrders) {
         const totalEarned = completedOrders.reduce((sum, ord) => {
-          const productAmount = parseFloat(ord.subtotal || ord.total_amount || "0");
+          const productAmount = parseFloat(String(ord.subtotal || ord.total_amount || "0"));
           return sum + Math.floor(productAmount * rate);
         }, 0);
 
@@ -245,19 +271,21 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [userPhone]);
 
-  // الاشتراك اللحظي في تحديثات الطلبات وإرسال الإشعارات للعميل
+  // الاشتراك اللحظي في تحديثات الطلبات
   useEffect(() => {
     const cleanPhone = userPhone.trim();
     if (!cleanPhone) return;
 
-    syncPointsWithDatabase();
+    const syncTimer = setTimeout(() => {
+      void syncPointsWithDatabase();
+    }, 0);
 
     const channel = supabase
       .channel(`realtime-orders-${cleanPhone}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders" },
-        async (payload: any) => {
+        async (payload: { new: OrderPayloadRow }) => {
           const updated = payload.new;
           if (updated && updated.customer_phone === cleanPhone) {
             if (updated.status === "baking") {
@@ -282,7 +310,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 .maybeSingle();
 
               const rate = Number(settings?.points_per_sar) || 1;
-              const productAmount = parseFloat(updated.subtotal || updated.total_amount || "0");
+              const productAmount = parseFloat(String(updated.subtotal || updated.total_amount || "0"));
               const earnedPts = Math.floor(productAmount * rate);
 
               pushNotification(
@@ -291,7 +319,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 "points",
                 updated.id
               );
-              syncPointsWithDatabase();
+              void syncPointsWithDatabase();
             }
           }
         }
@@ -299,7 +327,8 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      clearTimeout(syncTimer);
+      void supabase.removeChannel(channel);
     };
   }, [userPhone, syncPointsWithDatabase, pushNotification]);
 
@@ -346,18 +375,30 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const addOrder = useCallback(
-    async (orderData: any) => {
+    async (orderData: NewOrderInput) => {
       const now = new Date();
       const formattedDate = `${now.toLocaleDateString("ar-SA")} - ${now.toLocaleTimeString("ar-SA", {
         hour: "2-digit",
         minute: "2-digit",
       })}`;
 
-      const newOrder: PastOrder = { ...orderData, date: formattedDate, status: "pending" };
+      const newOrder: PastOrder = {
+        id: orderData.id,
+        items: orderData.items,
+        totalAmount: orderData.totalAmount,
+        paymentMethod: orderData.paymentMethod,
+        date: formattedDate,
+        status: "pending",
+        phone: orderData.phone,
+        customerName: orderData.customerName,
+      };
+
       setOrders((prev) => [newOrder, ...prev]);
 
       if (orderData.phone && orderData.phone !== userPhone) setUserPhone(orderData.phone);
-      if (orderData.customerName && orderData.customerName !== userName) setUserName(orderData.customerName);
+      if (orderData.customerName && orderData.customerName !== userName) {
+        setUserName(orderData.customerName);
+      }
 
       pushNotification(
         "📦 تم استلام طلبك بنجاح",
@@ -369,7 +410,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [userName, userPhone, pushNotification]
   );
 
-  // تصفير بيانات المستخدم فقط دون مسح السلة أو لغة المتجر
   const resetAllUserData = useCallback(() => {
     const cleanPhone = userPhone.trim();
     if (typeof window !== "undefined") {
@@ -391,7 +431,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return notifications.filter((n) => !n.isRead).length;
   }, [notifications]);
 
-  // دمج قيم السياق بـ useMemo لمنع إعادة تصيير مكونات المتجر عند كل تحديث
   const contextValue = useMemo(
     () => ({
       userName,

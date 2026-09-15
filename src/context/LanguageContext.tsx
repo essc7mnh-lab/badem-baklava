@@ -66,27 +66,35 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
   const [language, setLanguageState] = useState<Language>("ar");
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // استرجاع لغة العميل المفضلة عند أول تحميل
+  // استرجاع لغة العميل المفضلة بشكل غير متزامن لتفادي تعليق التصيير الأولي
   useEffect(() => {
-    try {
-      const savedLang = localStorage.getItem(LANGUAGE_STORAGE_KEY) as Language | null;
-      if (savedLang === "ar" || savedLang === "en") {
-        setLanguageState(savedLang);
+    const timer = setTimeout(() => {
+      try {
+        if (typeof window !== "undefined") {
+          const savedLang = localStorage.getItem(LANGUAGE_STORAGE_KEY) as Language | null;
+          if (savedLang === "ar" || savedLang === "en") {
+            setLanguageState(savedLang);
+          }
+        }
+      } catch {
+        // تجاوز أخطاء التخزين الصامتة
+      } finally {
+        setIsLoaded(true);
       }
-    } catch {
-      // تجاوز أخطاء التخزين الصامتة
-    } finally {
-      setIsLoaded(true);
-    }
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // تحديث اتجاه ولغة الصفحة في الـ DOM ومزامنتها في LocalStorage
   useEffect(() => {
     const dir: Direction = language === "ar" ? "rtl" : "ltr";
-    document.documentElement.dir = dir;
-    document.documentElement.lang = language;
+    if (typeof document !== "undefined") {
+      document.documentElement.dir = dir;
+      document.documentElement.lang = language;
+    }
 
-    if (isLoaded) {
+    if (isLoaded && typeof window !== "undefined") {
       try {
         localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
       } catch {
@@ -105,7 +113,7 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
 
   const t = useCallback(
     (key: TranslationKey | string): string => {
-      if (key in translations) {
+      if (Object.prototype.hasOwnProperty.call(translations, key)) {
         return translations[key as TranslationKey][language];
       }
       return key;

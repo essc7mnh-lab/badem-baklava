@@ -26,24 +26,27 @@ export const WishlistProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [favorites, setFavorites] = useState<string[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // 1. استرجاع المفضلة بأمان عند تحميل المتصفح
+  // 1. استرجاع المفضلة بشكل غير متزامن لتفادي تعليق التصيير وتصفير التنبيهات
   useEffect(() => {
-    try {
-      if (typeof window !== "undefined") {
-        const saved = localStorage.getItem(WISHLIST_STORAGE_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            // توحيد المعرفات كنصوص لضمان دقة المقارنة بين الأرقام والـ UUID
-            setFavorites(parsed.map((id) => String(id)));
+    const timer = setTimeout(() => {
+      try {
+        if (typeof window !== "undefined") {
+          const saved = localStorage.getItem(WISHLIST_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setFavorites(parsed.map((id) => String(id)));
+            }
           }
         }
+      } catch (e) {
+        console.warn("Failed to load wishlist from localStorage:", e);
+      } finally {
+        setIsLoaded(true);
       }
-    } catch (e) {
-      console.warn("Failed to load wishlist from localStorage:", e);
-    } finally {
-      setIsLoaded(true);
-    }
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // 2. مزامنة المفضلة تلقائياً عند أي تعديل (بعد اكتمال القراءة الأولى)
@@ -57,7 +60,7 @@ export const WishlistProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }, [favorites, isLoaded]);
 
-  // Set داخلي لعمليات البحث الفورية O(1) بدلاً من تكرار المصفوفة O(N) في كل بطاقة منتج
+  // Set داخلي لعمليات البحث الفورية O(1)
   const favoritesLookup = useMemo(() => new Set(favorites), [favorites]);
 
   const isFavorite = useCallback(

@@ -25,6 +25,7 @@ export const Footer: React.FC = () => {
   const { language } = useLanguage();
   const isAr = language === "ar";
   const currentYear = new Date().getFullYear();
+  const mapLink = "https://maps.app.goo.gl/WSoqTwxhk6684U7M6";
 
   return (
     <footer className="w-full bg-[#4A0E17] text-white border-t border-[#C59B27]/30 mt-6 py-5 px-4 mb-14 md:mb-0 shadow-2xl relative z-10">
@@ -40,14 +41,20 @@ export const Footer: React.FC = () => {
           </span>
         </div>
 
-        {/* معلومات الموقع وأوقات العمل */}
+        {/* معلومات الموقع وأوقات العمل (العنوان أصبح رابط تفاعلي للخريطة) */}
         <div className="flex flex-wrap items-center justify-center gap-2.5 text-stone-300 text-[11px]">
-          <span className="flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
-            <span>
+          <a
+            href={mapLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={isAr ? "عرض الموقع على خريطة جوجل" : "View location on Google Maps"}
+            className="flex items-center gap-1.5 hover:text-[#E5C058] transition group cursor-pointer"
+          >
+            <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0 group-hover:scale-110 transition-transform" />
+            <span className="underline decoration-stone-500/50 underline-offset-4 group-hover:decoration-[#E5C058]">
               {isAr ? "الرياض - حي المحمدية - شارع التخصصي" : "Riyadh - Al Mohammadiyah - Tahlia St"}
             </span>
-          </span>
+          </a>
 
           <span className="hidden sm:inline text-white/30">•</span>
 

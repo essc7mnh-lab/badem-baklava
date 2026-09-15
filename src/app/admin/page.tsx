@@ -5,19 +5,90 @@ import Image from "next/image";
 import { 
   Plus, Trash2, Edit3, Package, Tag, Image as ImageIcon, 
   ShoppingBag, Layers, RefreshCw, Lock, KeyRound, LogOut, 
-  Upload, Volume2, Loader2, Sparkles, Award, Coins, Wand2, 
+  Upload, Volume2, Loader2, Sparkles, Coins, Wand2, 
   Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal, User, AlertTriangle,
   PackagePlus,
-  MessageSquare
+  MessageSquare,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 import { OrdersManager } from "./OrdersManager";
 import { BoxBuilderSettings } from "./BoxBuilderSettings";
-import { ReviewsManager } from "./ReviewsManager"; // 👈 أضف هذا الاستيراد في الأعلى
+import { ReviewsManager } from "./ReviewsManager";
 
 // =========================================================================
-// 🌟 القسم الأول: المحركات الذكية، الترجمة الفورية، والأدوات المساعدة
+// 🌟 القسم الأول: تعريف الأنواع الصريحة والقاموس الذكي
 // =========================================================================
+
+export interface CategoryItem {
+  id: string;
+  slug: string;
+  name_ar: string;
+  name_en: string;
+  image_url: string;
+  sort_order?: number;
+}
+
+export interface ProductItem {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  category_slug: string;
+  base_price: number | string;
+  original_price?: number | string | null;
+  image_url?: string;
+  images?: string[];
+  is_available?: boolean;
+  description_ar?: string | null;
+  description_en?: string | null;
+  ingredients?: { nameAr: string; nameEn: string; icon: string }[];
+}
+
+export interface BannerItem {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  subtitle_ar?: string | null;
+  subtitle_en?: string | null;
+  tag_ar?: string | null;
+  image_url: string;
+  target_category_slug?: string | null;
+}
+
+export interface CouponItem {
+  id: string;
+  code: string;
+  discount_percent: number;
+  one_per_customer?: boolean | null;
+  max_uses?: number | null;
+  used_count?: number | null;
+  min_order_amount?: number | null;
+  expires_at?: string | null;
+  is_active?: boolean | null;
+}
+
+export interface LoyaltyRewardItem {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  discount_percent: number;
+  points_required: number;
+}
+
+export interface AdminOrderRow {
+  id: string;
+  customer_name?: string;
+  customer_phone?: string;
+  total_amount?: number | string;
+  subtotal?: number | string;
+  status?: string;
+  created_at?: string;
+  items?: unknown[];
+  [key: string]: unknown;
+}
+
+type AdminTab = "orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings" | "reviews";
 
 const GOURMET_DICTIONARY: Record<string, string> = {
   "بقلاوة": "Royal Baklava",
@@ -109,13 +180,12 @@ function generateCleanSlug(text: string): string {
 const QUICK_INGREDIENT_ICONS = ["🥜", "🧈", "🍯", "🌰", "🥛", "🌾", "🍫", "🌸", "🍋", "✨"];
 
 // =========================================================================
-// 🖥️ القسم الثاني: لوحة تحكم المتجر، التقارير، وإدارة العمليات
+// 🖥️ القسم الثاني: لوحة تحكم المتجر
 // =========================================================================
 
 export default function AdminDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  // حالات تسجيل الدخول
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -125,14 +195,14 @@ export default function AdminDashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings" | "reviews">("orders");
+  const [activeTab, setActiveTab] = useState<AdminTab>("orders");
 
-  const [categories, setCategories] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [banners, setBanners] = useState<any[]>([]);
-  const [coupons, setCoupons] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [loyaltyRewards, setLoyaltyRewards] = useState<any[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [banners, setBanners] = useState<BannerItem[]>([]);
+  const [coupons, setCoupons] = useState<CouponItem[]>([]);
+  const [orders, setOrders] = useState<AdminOrderRow[]>([]);
+  const [loyaltyRewards, setLoyaltyRewards] = useState<LoyaltyRewardItem[]>([]);
   const [pointsPerSar, setPointsPerSar] = useState<number>(10);
 
   // إدارة الأقسام
@@ -143,8 +213,9 @@ export default function AdminDashboard() {
   const [editingProdId, setEditingProdId] = useState<string | null>(null);
   const [newProd, setNewProd] = useState({
     title_ar: "", title_en: "", category_slug: "", base_price: "",
-    original_price: "", image_url: "", description_ar: "", description_en: ""
+    original_price: "", image_url: "", is_available: true, description_ar: "", description_en: ""
   });
+  const [productImages, setProductImages] = useState<string[]>([]);
   const [productIngredients, setProductIngredients] = useState<{ nameAr: string; nameEn: string; icon: string }[]>([]);
   const [currIngNameAr, setCurrIngNameAr] = useState("");
   const [currIngNameEn, setCurrIngNameEn] = useState("");
@@ -152,7 +223,7 @@ export default function AdminDashboard() {
 
   // إدارة البانرات
   const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
-  const [newBanner, setNewBanner] = useState({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" });
+  const [newBanner, setNewBanner] = useState({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" ,target_category_slug: "" });
 
   // إدارة الكوبونات
   const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
@@ -172,9 +243,13 @@ export default function AdminDashboard() {
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
-    if (sessionStorage.getItem("badem_admin_auth") === "true") {
-      setIsAuthenticated(true);
-    }
+    const authTimer = setTimeout(() => {
+      if (typeof window !== "undefined" && sessionStorage.getItem("badem_admin_auth") === "true") {
+        setIsAuthenticated(true);
+      }
+    }, 0);
+
+    return () => clearTimeout(authTimer);
   }, []);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -192,7 +267,6 @@ export default function AdminDashboard() {
         return;
       }
 
-      // فحص الحظر المؤقت
       const lockDataStr = localStorage.getItem(`badem_lock_${cleanUser}`);
       if (lockDataStr) {
         const lockData = JSON.parse(lockDataStr);
@@ -271,7 +345,7 @@ export default function AdminDashboard() {
       osc.start(now);
       osc.stop(now + 1.2);
     } catch (e) {
-      console.warn("Audio trigger non-blocking error:", e);
+      console.warn("Audio trigger error:", e);
     }
   }, []);
 
@@ -289,7 +363,7 @@ export default function AdminDashboard() {
       ]);
 
       if (catRes.data) {
-        setCategories(catRes.data);
+        setCategories(catRes.data as CategoryItem[]);
         if (catRes.data.length > 0) {
           setNewProd((prev) => ({
             ...prev,
@@ -297,11 +371,11 @@ export default function AdminDashboard() {
           }));
         }
       }
-      if (prodRes.data) setProducts(prodRes.data);
-      if (banRes.data) setBanners(banRes.data);
-      if (coupRes.data) setCoupons(coupRes.data);
-      if (ordRes.data) setOrders(ordRes.data);
-      if (loyRes.data) setLoyaltyRewards(loyRes.data);
+      if (prodRes.data) setProducts(prodRes.data as ProductItem[]);
+      if (banRes.data) setBanners(banRes.data as BannerItem[]);
+      if (coupRes.data) setCoupons(coupRes.data as CouponItem[]);
+      if (ordRes.data) setOrders(ordRes.data as AdminOrderRow[]);
+      if (loyRes.data) setLoyaltyRewards(loyRes.data as LoyaltyRewardItem[]);
       if (setRes.data?.points_per_sar) setPointsPerSar(Number(setRes.data.points_per_sar));
     } catch (e) {
       console.error("Error fetching admin data:", e);
@@ -312,18 +386,22 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    fetchData();
+
+    const fetchTimer = setTimeout(() => {
+      void fetchData();
+    }, 0);
 
     const channel = supabase
       .channel("realtime-admin-orders")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, (payload) => {
-        setOrders((prev) => [payload.new as any, ...prev]);
+        setOrders((prev) => [payload.new as AdminOrderRow, ...prev]);
         playLuxuryOrderAlert();
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      clearTimeout(fetchTimer);
+      void supabase.removeChannel(channel);
     };
   }, [isAuthenticated, fetchData, playLuxuryOrderAlert]);
 
@@ -373,30 +451,44 @@ export default function AdminDashboard() {
     }));
   };
 
+  // رفع الصور وتوزيعها (مع دعم المعرض المتعدد للمنتجات)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: "category" | "product" | "banner") => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 8 * 1024 * 1024) {
-      alert("حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 8 ميجابايت");
-      return;
-    }
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploadingImage(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("target", target);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.size > 8 * 1024 * 1024) {
+          alert(`الملف ${file.name} كبير جداً، يرجى اختيار صور أقل من 8 ميجابايت`);
+          continue;
+        }
 
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "فشل رفع الصورة");
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("target", target);
 
-      if (target === "category") setNewCat((prev) => ({ ...prev, image_url: data.url }));
-      if (target === "product") setNewProd((prev) => ({ ...prev, image_url: data.url }));
-      if (target === "banner") setNewBanner((prev) => ({ ...prev, image_url: data.url }));
-    } catch (err: any) {
-      alert("خطأ أثناء معالجة ورفع الصورة: " + err.message);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || "فشل رفع الصورة");
+
+        if (target === "category") {
+          setNewCat((prev) => ({ ...prev, image_url: data.url }));
+        } else if (target === "banner") {
+          setNewBanner((prev) => ({ ...prev, image_url: data.url }));
+        } else if (target === "product") {
+          // إضافة الصورة إلى مصفوفة صور المنتج وتحديث الصورة الرئيسية
+          setProductImages((prev) => [...prev, data.url]);
+          setNewProd((prev) => ({
+            ...prev,
+            image_url: prev.image_url || data.url,
+          }));
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ غير متوقع";
+      alert("خطأ أثناء معالجة ورفع الصورة: " + message);
     } finally {
       setUploadingImage(false);
       e.target.value = "";
@@ -430,21 +522,27 @@ export default function AdminDashboard() {
       setEditingCatId(null);
       setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: 0 });
       await fetchData();
-    } catch (err: any) {
-      alert("تعذر حفظ القسم: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
+      alert("تعذر حفظ القسم: " + message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // حفظ الصنف مع الصور المتعددة وحالة التوفر
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProd.title_ar || !newProd.base_price || !newProd.image_url) {
-      return alert("يرجى إكمال بيانات المنتج الأساسية");
+    const primaryImg = productImages[0] || newProd.image_url.trim();
+
+    if (!newProd.title_ar || !newProd.base_price || !primaryImg) {
+      return alert("يرجى إكمال بيانات المنتج وإضافة صورة واحدة على الأقل");
     }
 
     setIsSubmitting(true);
     try {
+      const finalImagesList = productImages.length > 0 ? productImages : [primaryImg];
+
       const payload = {
         title_ar: newProd.title_ar.trim(),
         title_en: newProd.title_en.trim() || translateToGourmetEnglish(newProd.title_ar),
@@ -452,7 +550,9 @@ export default function AdminDashboard() {
         base_price: parseFloat(newProd.base_price),
         original_price: newProd.original_price ? parseFloat(newProd.original_price) : null,
         has_discount: Boolean(newProd.original_price),
-        image_url: newProd.image_url.trim(),
+        image_url: primaryImg,
+        images: finalImagesList,
+        is_available: Boolean(newProd.is_available),
         description_ar: newProd.description_ar.trim(),
         description_en: newProd.description_en.trim(),
         ingredients: productIngredients,
@@ -471,21 +571,45 @@ export default function AdminDashboard() {
       setEditingProdId(null);
       setNewProd({
         title_ar: "", title_en: "", category_slug: categories[0]?.slug || "",
-        base_price: "", original_price: "", image_url: "", description_ar: "", description_en: ""
+        base_price: "", original_price: "", image_url: "", is_available: true, description_ar: "", description_en: ""
       });
+      setProductImages([]);
       setProductIngredients([]);
       await fetchData();
-    } catch (err: any) {
-      alert("تعذر حفظ المنتج: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
+      alert("تعذر حفظ المنتج: " + message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // تبديل فوري لحالة توفر الصنف بضغطة زر واحدة من القائمة
+  const handleQuickToggleAvailability = async (product: ProductItem) => {
+    const nextStatus = !(product.is_available ?? true);
+
+    // تحديث فوري وسريع للواجهة
+    setProducts((prev) =>
+      prev.map((p) => (p.id === product.id ? { ...p, is_available: nextStatus } : p))
+    );
+
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({ is_available: nextStatus })
+        .eq("id", product.id);
+
+      if (error) throw error;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "فشل التحديث";
+      alert("تعذر تحديث حالة الصنف: " + msg);
+      await fetchData();
+    }
+  };
+
   const handleSaveBanner = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBanner.title_ar || !newBanner.image_url) return alert("يرجى إدخال عنوان وصورة العرض");
-
+if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان أولاً");
     setIsSubmitting(true);
     try {
       const payload = {
@@ -495,6 +619,7 @@ export default function AdminDashboard() {
         subtitle_en: newBanner.subtitle_en.trim() || translateToGourmetEnglish(newBanner.subtitle_ar),
         tag_ar: newBanner.tag_ar.trim(),
         image_url: newBanner.image_url.trim(),
+        target_category_slug: newBanner.target_category_slug || null,
       };
 
       if (editingBannerId) {
@@ -508,10 +633,11 @@ export default function AdminDashboard() {
       }
 
       setEditingBannerId(null);
-      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" });
+      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" ,target_category_slug: "" });
       await fetchData();
-    } catch (err: any) {
-      alert("تعذر حفظ البانر: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
+      alert("تعذر حفظ البانر: " + message);
     } finally {
       setIsSubmitting(false);
     }
@@ -555,14 +681,15 @@ export default function AdminDashboard() {
         expires_at: "",
       });
       await fetchData();
-    } catch (err: any) {
-      alert("تعذر حفظ الكوبون: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
+      alert("تعذر حفظ الكوبون: " + message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const startEditCoupon = (c: any) => {
+  const startEditCoupon = (c: CouponItem) => {
     setEditingCouponId(c.id);
     setNewCoupon({
       code: c.code || "",
@@ -603,8 +730,9 @@ export default function AdminDashboard() {
       setEditingRewardId(null);
       setNewLoyaltyReward({ title_ar: "", title_en: "", discount_percent: "", points_required: "" });
       await fetchData();
-    } catch (err: any) {
-      alert("تعذر حفظ المكافأة: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
+      alert("تعذر حفظ المكافأة: " + message);
     } finally {
       setIsSubmitting(false);
     }
@@ -620,8 +748,9 @@ export default function AdminDashboard() {
       });
       if (error) throw error;
       alert("تم تحديث معدل احتساب النقاط بنجاح! 🪙");
-    } catch (err: any) {
-      alert("تعذر حفظ الإعدادات: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
+      alert("تعذر حفظ الإعدادات: " + message);
     } finally {
       setIsSubmitting(false);
     }
@@ -633,8 +762,9 @@ export default function AdminDashboard() {
         const { error } = await supabase.from(table).delete().eq("id", id);
         if (error) throw error;
         await fetchData();
-      } catch (err: any) {
-        alert("تعذر الحذف: " + err.message);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "خطأ أثناء الحذف";
+        alert("تعذر الحذف: " + message);
       }
     }
   };
@@ -748,21 +878,21 @@ export default function AdminDashboard() {
         {/* أزرار التبويبات */}
         <div className="flex gap-2 border-b border-stone-200 pb-2 overflow-x-auto no-scrollbar">
           {[
-            { id: "orders", label: `الطلبات (${orders.length})`, icon: ShoppingBag },
-            { id: "categories", label: `الأقسام (${categories.length})`, icon: Layers },
-            { id: "products", label: `المنتجات (${products.length})`, icon: Package },
-            { id: "banners", label: `العروض والبانرات (${banners.length})`, icon: ImageIcon },
-            { id: "coupons", label: `الكوبونات والأمان 🛡️ (${coupons.length})`, icon: Tag },
-            { id: "loyalty", label: `نقاط المكافآت (${loyaltyRewards.length})`, icon: Award },
-            { id: "box_settings", label: "خدمة البوكسات ", icon: PackagePlus },
-            { id: "reviews", label: "التعليقات والتقييمات ", icon: MessageSquare }, // 🌟 👈 أضف هذا التبويب الجديد هنا
+            { id: "orders" as const, label: `الطلبات (${orders.length})`, icon: ShoppingBag },
+            { id: "categories" as const, label: `الأقسام (${categories.length})`, icon: Layers },
+            { id: "products" as const, label: `المنتجات (${products.length})`, icon: Package },
+            { id: "banners" as const, label: `العروض والبانرات (${banners.length})`, icon: ImageIcon },
+            { id: "coupons" as const, label: `الكوبونات والأمان 🛡️ (${coupons.length})`, icon: Tag },
+            { id: "loyalty" as const, label: `نقاط المكافآت (${loyaltyRewards.length})`, icon: Medal },
+            { id: "box_settings" as const, label: "خدمة البوكسات", icon: PackagePlus },
+            { id: "reviews" as const, label: "التعليقات والتقييمات", icon: MessageSquare },
           ].map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
                   activeTab === tab.id
                     ? "bg-[#4A0E17] text-white shadow-md font-black"
@@ -823,7 +953,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1 flex items-center justify-between">
+                  <label className="flex items-center justify-between font-bold mb-1">
                     <span>الاسم بالإنجليزي (ترجمة فورية):</span>
                     <Wand2 className="w-3 h-3 text-[#C59B27]" />
                   </label>
@@ -910,7 +1040,13 @@ export default function AdminDashboard() {
                       type="button"
                       onClick={() => {
                         setEditingCatId(cat.id);
-                        setNewCat(cat);
+                        setNewCat({
+                          slug: cat.slug,
+                          name_ar: cat.name_ar,
+                          name_en: cat.name_en,
+                          image_url: cat.image_url,
+                          sort_order: cat.sort_order || 0,
+                        });
                         window.scrollTo({ top: 0, behavior: "smooth" });
                       }}
                       title="تعديل"
@@ -940,7 +1076,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 3️⃣ تبويب إدارة المنتجات */}
+        {/* 3️⃣ تبويب إدارة المنتجات (مع دعم الصور المتعددة وحالة التوفر) */}
         {activeTab === "products" && (
           <div className="space-y-6">
             <form onSubmit={handleSaveProduct} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
@@ -956,8 +1092,9 @@ export default function AdminDashboard() {
                       setEditingProdId(null);
                       setNewProd({
                         title_ar: "", title_en: "", category_slug: categories[0]?.slug || "",
-                        base_price: "", original_price: "", image_url: "", description_ar: "", description_en: ""
+                        base_price: "", original_price: "", image_url: "", is_available: true, description_ar: "", description_en: ""
                       });
+                      setProductImages([]);
                       setProductIngredients([]);
                     }}
                     className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
@@ -981,7 +1118,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1 flex items-center justify-between">
+                  <label className="flex items-center justify-between font-bold mb-1">
                     <span>الاسم بالإنجليزي (ترجمة فورية):</span>
                     <Wand2 className="w-3 h-3 text-[#C59B27]" />
                   </label>
@@ -1032,29 +1169,99 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="block font-bold mb-1">صورة المنتج *:</label>
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1.5 px-3 py-2 bg-[#4A0E17] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-[#36070E] shrink-0">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>{uploadingImage ? "رفع..." : "رفع ملف"}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingImage}
-                        onChange={(e) => handleFileUpload(e, "product")}
-                        className="hidden"
-                      />
-                    </label>
+                {/* 🌟 مفتاح حالة التوفر ونفاد الكمية */}
+                <div className="flex items-center justify-between p-2.5 bg-[#FAF5ED] border border-stone-200 rounded-xl">
+                  <div>
+                    <span className="font-bold block text-stone-800">حالة التوفر:</span>
+                    <span className="text-[10px] text-stone-500 font-medium">
+                      {newProd.is_available ? "متوفر للطلب الفوري 🟢" : "نفدت الكمية مؤقتاً 🔴"}
+                    </span>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newProd.is_available}
+                      onChange={(e) => setNewProd({ ...newProd, is_available: e.target.checked })}
+                      className="w-5 h-5 accent-[#4A0E17] rounded-md cursor-pointer"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 🌟 قسم معرض صور المنتج المتعددة */}
+              <div className="bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-xs font-black text-[#4A0E17]">
+                    <ImageIcon className="w-4 h-4 text-[#C59B27]" />
+                    <span>صور الصنف (يمكنك رفع أو إضافة عدة صور):</span>
+                  </label>
+                  <span className="text-[10px] text-stone-400 font-bold">
+                    {productImages.length} صور مضافة
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#4A0E17] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-[#36070E] transition shrink-0">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{uploadingImage ? "جاري الرفع..." : "+ رفع صورة جديدة"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={uploadingImage}
+                      onChange={(e) => handleFileUpload(e, "product")}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <div className="flex-1 min-w-[200px] flex gap-2">
                     <input
                       type="text"
-                      placeholder="رابط الصورة..."
+                      placeholder="أو الصق رابط صورة هنا واضغط إضافة..."
                       value={newProd.image_url}
                       onChange={(e) => setNewProd({ ...newProd, image_url: e.target.value })}
-                      className="flex-1 bg-[#FAF5ED] border border-stone-200 rounded-xl p-2 text-xs font-medium"
+                      className="flex-1 bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs font-medium"
                     />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!newProd.image_url.trim()) return;
+                        setProductImages((prev) => [...prev, newProd.image_url.trim()]);
+                        setNewProd({ ...newProd, image_url: "" });
+                      }}
+                      className="px-3.5 py-2 bg-stone-800 text-white rounded-xl text-xs font-bold hover:bg-black cursor-pointer"
+                    >
+                      إضافة الرابط
+                    </button>
                   </div>
                 </div>
+
+                {/* استعراض وحذف صور المعرض */}
+                {productImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2.5 pt-2 border-t border-stone-200/60">
+                    {productImages.map((imgUrl, idx) => (
+                      <div
+                        key={idx}
+                        className="relative w-16 h-16 rounded-xl overflow-hidden border-2 border-stone-200 bg-white group shadow-2xs"
+                      >
+                        <Image src={imgUrl} alt="" fill sizes="64px" className="object-cover" />
+                        {idx === 0 && (
+                          <span className="absolute bottom-0 inset-x-0 bg-[#4A0E17]/90 text-[#E5C058] text-[8px] font-black text-center py-0.5">
+                            الرئيسية
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setProductImages((prev) => prev.filter((_, i) => i !== idx))}
+                          title="حذف هذه الصورة"
+                          className="absolute top-1 right-1 bg-rose-600/90 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold opacity-80 hover:opacity-100 cursor-pointer transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1062,7 +1269,7 @@ export default function AdminDashboard() {
                   <label className="block text-xs font-bold mb-1">الوصف بالعربي:</label>
                   <textarea
                     rows={2}
-                    value={newProd.description_ar}
+                    value={newProd.description_ar || ""}
                     onChange={(e) => handleProductDescArChange(e.target.value)}
                     placeholder="وصف مكونات ومميزات الصنف بالعربي..."
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs resize-none"
@@ -1070,13 +1277,13 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 flex items-center justify-between">
+                  <label className="flex items-center justify-between font-bold mb-1 text-xs">
                     <span>الوصف بالإنجليزي (ترجمة فورية):</span>
                     <Wand2 className="w-3 h-3 text-[#C59B27]" />
                   </label>
                   <textarea
                     rows={2}
-                    value={newProd.description_en}
+                    value={newProd.description_en || ""}
                     onChange={(e) => setNewProd({ ...newProd, description_en: e.target.value })}
                     placeholder="Gourmet English description..."
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs resize-none"
@@ -1086,7 +1293,7 @@ export default function AdminDashboard() {
 
               {/* تفكيك المكونات */}
               <div className="bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200 space-y-3">
-                <label className="block text-xs font-black text-[#4A0E17] flex items-center gap-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-black text-[#4A0E17]">
                   <Sparkles className="w-3.5 h-3.5 text-[#C59B27]" />
                   <span>تفكيك المكونات الطبيعية (اختياري):</span>
                 </label>
@@ -1172,62 +1379,104 @@ export default function AdminDashboard() {
               </button>
             </form>
 
+            {/* قائمة عرض المنتجات مع مفتاح التبديل السريع الفوري */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {products.map((p) => (
-                <div key={p.id} className="bg-white p-4 rounded-3xl border border-stone-200 flex items-center justify-between gap-3 shadow-2xs">
-                  <div className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-100 bg-stone-50 shrink-0">
-                    <Image src={p.image_url || "/hero-baklava.png"} alt={p.title_ar} fill sizes="64px" className="object-cover" />
+              {products.map((p) => {
+                const isAvail = p.is_available ?? true;
+                const imagesCount = Array.isArray(p.images) ? p.images.length : (p.image_url ? 1 : 0);
+
+                return (
+                  <div key={p.id} className="bg-white p-4 rounded-3xl border border-stone-200 flex flex-col justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-100 bg-stone-50 shrink-0">
+                        <Image src={p.image_url || "/hero-baklava.png"} alt={p.title_ar} fill sizes="64px" className="object-cover" />
+                        {imagesCount > 1 && (
+                          <span className="absolute top-1 left-1 bg-black/60 backdrop-blur-xs text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
+                            +{imagesCount}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-xs truncate">{p.title_ar}</h4>
+                        <span className="text-[10px] text-stone-400 block truncate">{p.title_en}</span>
+                        <span className="text-xs font-black text-[#4A0E17] block font-mono">
+                          {Number(p.base_price).toFixed(2)} ر.س
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProdId(p.id);
+                            setNewProd({
+                              title_ar: p.title_ar || "",
+                              title_en: p.title_en || "",
+                              category_slug: p.category_slug || categories[0]?.slug || "",
+                              base_price: p.base_price ? String(p.base_price) : "",
+                              original_price: p.original_price ? String(p.original_price) : "",
+                              image_url: p.image_url || "",
+                              is_available: p.is_available ?? true,
+                              description_ar: p.description_ar || "",
+                              description_en: p.description_en || "",
+                            });
+                            setProductImages(Array.isArray(p.images) ? p.images : (p.image_url ? [p.image_url] : []));
+                            setProductIngredients(p.ingredients || []);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          title="تعديل"
+                          className="p-2 text-stone-400 hover:text-amber-600 cursor-pointer"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete("products", p.id)}
+                          title="حذف"
+                          className="p-2 text-stone-400 hover:text-rose-600 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* زر التبديل السريع الفوري بين متوفر ونفدت الكمية */}
+                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                      <span className="text-[10px] text-stone-400 font-bold">حالة الطلب:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickToggleAvailability(p)}
+                        className={`text-[10.5px] px-3 py-1 rounded-xl font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          isAvail
+                            ? "bg-emerald-50 text-emerald-800 border border-emerald-200/80 hover:bg-emerald-100"
+                            : "bg-rose-50 text-rose-800 border border-rose-200/80 hover:bg-rose-100"
+                        }`}
+                      >
+                        {isAvail ? (
+                          <>
+                            <Eye className="w-3 h-3 text-emerald-600" />
+                            <span>متوفر للطلب 🟢</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="w-3 h-3 text-rose-600" />
+                            <span>نفدت الكمية 🔴</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-xs truncate">{p.title_ar}</h4>
-                    <span className="text-[10px] text-stone-400 block truncate">{p.title_en}</span>
-                    <span className="text-xs font-black text-[#4A0E17] block font-mono">
-                      {Number(p.base_price).toFixed(2)} ر.س
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingProdId(p.id);
-                        setNewProd({
-                          title_ar: p.title_ar || "",
-                          title_en: p.title_en || "",
-                          category_slug: p.category_slug || categories[0]?.slug || "",
-                          base_price: p.base_price ? String(p.base_price) : "",
-                          original_price: p.original_price ? String(p.original_price) : "",
-                          image_url: p.image_url || "",
-                          description_ar: p.description_ar || "",
-                          description_en: p.description_en || "",
-                        });
-                        setProductIngredients(p.ingredients || []);
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }}
-                      title="تعديل"
-                      className="p-2 text-stone-400 hover:text-amber-600 cursor-pointer"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete("products", p.id)}
-                      title="حذف"
-                      className="p-2 text-stone-400 hover:text-rose-600 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
+
         {/* تبويب إدارة التعليقات والتقييمات */}
-{activeTab === "reviews" && (
-  <div className="pt-2">
-    <ReviewsManager />
-  </div>
-)}
+        {activeTab === "reviews" && (
+          <div className="pt-2">
+            <ReviewsManager />
+          </div>
+        )}
 
         {/* 4️⃣ تبويب إدارة العروض والبانرات */}
         {activeTab === "banners" && (
@@ -1243,7 +1492,7 @@ export default function AdminDashboard() {
                     type="button"
                     onClick={() => {
                       setEditingBannerId(null);
-                      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" });
+                      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "", target_category_slug: "" });
                     }}
                     className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
                   >
@@ -1254,19 +1503,20 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div>
-                  <label className="block font-bold mb-1">العنوان بالعربي *:</label>
-                  <textarea
-                    rows={2}
-                    required
-                    placeholder={"سارما ملكية\nفستق عنتاب خالص"}
-                    value={newBanner.title_ar}
-                    onChange={(e) => handleBannerTitleArChange(e.target.value)}
-                    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs font-bold resize-none"
-                  />
+                 <div>
+  <label className="block font-bold mb-1">العنوان بالعربي (اختياري):</label>
+  <textarea
+    rows={2}
+    placeholder={"سارما ملكية\nفستق عنتاب خالص (اتركه فارغاً إذا كان التصميم جاهزاً)"}
+    value={newBanner.title_ar}
+    onChange={(e) => handleBannerTitleArChange(e.target.value)}
+    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs font-bold resize-none"
+  />
+</div>
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1 flex items-center justify-between">
+                  <label className="flex items-center justify-between font-bold mb-1">
                     <span>العنوان بالإنجليزي (ترجمة فورية):</span>
                     <Wand2 className="w-3 h-3 text-[#C59B27]" />
                   </label>
@@ -1291,7 +1541,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1 flex items-center justify-between">
+                  <label className="flex items-center justify-between font-bold mb-1">
                     <span>الوصف المختصر بالإنجليزي:</span>
                     <Wand2 className="w-3 h-3 text-[#C59B27]" />
                   </label>
@@ -1303,6 +1553,26 @@ export default function AdminDashboard() {
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs"
                   />
                 </div>
+                <div className="md:col-span-2">
+  <label className="block font-bold mb-1 text-xs text-stone-700">
+    🔗 توجيه العميل عند النقر على هذا الإعلان (اختياري):
+  </label>
+  <select
+    value={newBanner.target_category_slug}
+    onChange={(e) => setNewBanner({ ...newBanner, target_category_slug: e.target.value })}
+    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-bold text-xs cursor-pointer focus:outline-hidden focus:border-[#4A0E17]"
+  >
+    <option value="">بدون توجيه (عرض الصفحة الرئيسية فقط)</option>
+    {categories.map((cat) => (
+      <option key={cat.id} value={cat.slug}>
+        الانتقال فوراً لقسم: {cat.name_ar} ({cat.slug})
+      </option>
+    ))}
+  </select>
+  <p className="text-[10px] text-stone-400 mt-1">
+    * عند نقر العميل على البانر، سيتم نقله تلقائياً إلى هذا القسم وعرض منتجاته بسلاسة.
+  </p>
+</div>
 
                 <div className="md:col-span-2 space-y-1">
                   <label className="block font-bold mb-1">صورة العرض *:</label>
@@ -1362,7 +1632,15 @@ export default function AdminDashboard() {
                       type="button"
                       onClick={() => {
                         setEditingBannerId(b.id);
-                        setNewBanner(b);
+                        setNewBanner({
+                          title_ar: b.title_ar || "",
+                          title_en: b.title_en || "",
+                          subtitle_ar: b.subtitle_ar || "",
+                          subtitle_en: b.subtitle_en || "",
+                          tag_ar: b.tag_ar || "عرض حصري",
+                          image_url: b.image_url || "",
+                          target_category_slug: b.target_category_slug || "",
+                        });
                         window.scrollTo({ top: 0, behavior: "smooth" });
                       }}
                       title="تعديل"
@@ -1451,14 +1729,14 @@ export default function AdminDashboard() {
               </div>
 
               <div className="bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200/80 space-y-4">
-                <span className="text-xs font-black text-[#4A0E17] flex items-center gap-1.5">
+                <span className="flex items-center gap-1.5 text-xs font-black text-[#4A0E17]">
                   <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
                   <span>شروط الاستخدام والقيود الأمنية (اختياري):</span>
                 </span>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                   <div>
-                    <label className="block font-bold mb-1 flex items-center gap-1 text-stone-700">
+                    <label className="flex items-center gap-1 font-bold mb-1 text-stone-700">
                       <DollarSign className="w-3.5 h-3.5 text-[#4A0E17]" />
                       <span>الحد الأدنى لقيمة السلة (ر.س):</span>
                     </label>
@@ -1473,7 +1751,7 @@ export default function AdminDashboard() {
                   </div>
 
                   <div>
-                    <label className="block font-bold mb-1 flex items-center gap-1 text-stone-700">
+                    <label className="flex items-center gap-1 font-bold mb-1 text-stone-700">
                       <Users className="w-3.5 h-3.5 text-[#4A0E17]" />
                       <span>العدد الإجمالي المسموح به:</span>
                     </label>
@@ -1488,7 +1766,7 @@ export default function AdminDashboard() {
                   </div>
 
                   <div>
-                    <label className="block font-bold mb-1 flex items-center gap-1.5 text-stone-700">
+                    <label className="flex items-center gap-1.5 font-bold mb-1 text-stone-700">
                       <Calendar className="w-3.5 h-3.5 text-[#C59B27]" />
                       <span>تاريخ انتهاء الكوبون:</span>
                     </label>
@@ -1541,8 +1819,8 @@ export default function AdminDashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {coupons.map((c) => {
-                const isExpired = c.expires_at && new Date(c.expires_at) < new Date();
-                const isLimitReached = c.max_uses && (c.used_count || 0) >= c.max_uses;
+                const isExpired = Boolean(c.expires_at && new Date(c.expires_at) < new Date());
+                const isLimitReached = Boolean(c.max_uses && (c.used_count || 0) >= c.max_uses);
 
                 return (
                   <div
@@ -1697,7 +1975,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1 flex items-center justify-between">
+                  <label className="flex items-center justify-between font-bold mb-1">
                     <span>الاسم بالإنجليزي (ترجمة فورية):</span>
                     <Wand2 className="w-3 h-3 text-[#C59B27]" />
                   </label>
@@ -1772,7 +2050,12 @@ export default function AdminDashboard() {
                       type="button"
                       onClick={() => {
                         setEditingRewardId(r.id);
-                        setNewLoyaltyReward(r);
+                        setNewLoyaltyReward({
+                          title_ar: r.title_ar,
+                          title_en: r.title_en,
+                          discount_percent: String(r.discount_percent),
+                          points_required: String(r.points_required),
+                        });
                         window.scrollTo({ top: 0, behavior: "smooth" });
                       }}
                       title="تعديل"

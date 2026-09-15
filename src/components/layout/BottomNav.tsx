@@ -5,6 +5,7 @@ import { Home, PackagePlus, ShoppingBag, Gift, User } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useUser } from "@/context/UserContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { royalSound } from "@/lib/sound";
 
 export const BottomNav: React.FC = () => {
   const { totalItemsCount, setIsCartOpen, isCartBouncing } = useCart();
@@ -35,7 +36,10 @@ export const BottomNav: React.FC = () => {
       {/* 2. صمّم بوكسك (Custom Box) */}
       <button
         type="button"
-        onClick={() => setIsMenuOpen(true)}
+        onClick={() => {
+          royalSound.playBoxOpenSound(); // 👈 تشغيل الصوت الفاخر عند الضغط في الهاتف
+          setIsMenuOpen(true);
+        }}
         aria-label={isAr ? "صمّم بوكسك" : "Custom Box"}
         className="flex flex-col items-center gap-1 text-stone-500 hover:text-[#4A0E17] transition-all cursor-pointer group active:scale-95"
       >

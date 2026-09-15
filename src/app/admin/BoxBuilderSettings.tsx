@@ -42,7 +42,7 @@ export const BoxBuilderSettings: React.FC = () => {
           }
 
           if (tiersRes.data && tiersRes.data.length > 0) {
-            setTiers(tiersRes.data);
+            setTiers(tiersRes.data as BoxTier[]);
           }
         }
       } catch (err) {
@@ -50,10 +50,13 @@ export const BoxBuilderSettings: React.FC = () => {
       }
     };
 
-    loadAllSettings();
+    const timer = setTimeout(() => {
+      void loadAllSettings();
+    }, 0);
 
     return () => {
       isMounted = false;
+      clearTimeout(timer);
     };
   }, []);
 
@@ -101,9 +104,10 @@ export const BoxBuilderSettings: React.FC = () => {
 
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Save box settings error:", err);
-      alert("حدث خطأ أثناء الحفظ: " + (err.message || "يرجى المحاولة لاحقاً"));
+      const message = err instanceof Error ? err.message : "يرجى المحاولة لاحقاً";
+      alert("حدث خطأ أثناء الحفظ: " + message);
     } finally {
       setIsSaving(false);
     }
@@ -111,7 +115,6 @@ export const BoxBuilderSettings: React.FC = () => {
 
   return (
     <div className="bg-white rounded-3xl border border-stone-200/80 shadow-2xs overflow-hidden p-6 max-w-3xl mx-auto space-y-6 text-stone-800 select-none">
-      
       {/* ترويسة اللوحة */}
       <div className="flex items-center justify-between border-b border-stone-100 pb-4">
         <div className="flex items-center gap-3">
@@ -136,12 +139,10 @@ export const BoxBuilderSettings: React.FC = () => {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        
         {/* طريقة التسعير */}
         <div className="space-y-2">
           <label className="text-xs font-black text-stone-700 block">طريقة حساب سعر البوكس:</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            
             {/* خيار التسعير الديناميكي */}
             <div
               onClick={() => setPricingMode("dynamic")}
@@ -230,7 +231,7 @@ export const BoxBuilderSettings: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* حقل تحديد السعر المباشر للبوكس - يظهر فقط عند اختيار السعر الثابت */}
+                  {/* حقل تحديد السعر المباشر للبوكس */}
                   {pricingMode === "fixed" && (
                     <div className="flex-1 sm:flex-initial animate-in fade-in duration-200">
                       <label className="block text-[10px] font-bold text-stone-500 mb-0.5">سعر البوكس (ر.س):</label>
@@ -253,7 +254,7 @@ export const BoxBuilderSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* رسوم العلبة والتغليف الملكي */}
+        {/* رسوم العلبة والتغليف */}
         <div>
           <label className="block text-xs font-black text-stone-700 mb-1">
             سعر علبة التغليف الفاخرة (ر.س):
@@ -295,7 +296,6 @@ export const BoxBuilderSettings: React.FC = () => {
             <span>{isSaving ? "جاري الحفظ..." : "حفظ الإعدادات"}</span>
           </button>
         </div>
-
       </form>
     </div>
   );
