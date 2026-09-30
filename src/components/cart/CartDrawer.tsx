@@ -19,13 +19,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onCheckout }) => {
     subtotal,
     discountAmount,
     discountPercent,
-    deliveryFee,
-    totalAmount,
     applyCoupon,
     couponMessage,
   } = useCart();
   const { dir, t } = useLanguage();
   const [couponInput, setCouponInput] = useState("");
+
+  // حساب المجموع الصافي للمنتجات فقط بعد الخصم (بدون أي رسوم توصيل)
+  const itemsTotal = Math.max(0, subtotal - discountAmount);
 
   if (!isCartOpen) return null;
 
@@ -95,7 +96,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onCheckout }) => {
                 key={`${item.id}-${item.portionNote || idx}`}
                 className="bg-white p-3 rounded-2xl border border-stone-200/90 flex items-center justify-between gap-3 shadow-2xs hover:border-[#4A0E17]/20 transition"
               >
-                {/* صورة الصنف مع Next/Image المحسّن */}
+                {/* صورة الصنف */}
                 <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-stone-100 shrink-0 bg-stone-50">
                   <Image
                     src={item.image || "/hero-baklava.png"}
@@ -141,7 +142,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onCheckout }) => {
                     className="w-6 h-6 bg-white hover:bg-emerald-50 hover:text-emerald-700 rounded-lg flex items-center justify-center font-bold text-xs shadow-2xs transition active:scale-90 cursor-pointer"
                     title="زيادة"
                   >
-                    <Plus className="w-3 h-3" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -184,7 +185,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onCheckout }) => {
             </p>
           )}
 
-          {/* تفاصيل الفاتورة */}
+          {/* تفاصيل الفاتورة النظيفة (بدون رسوم توصيل) */}
           <div className="space-y-1.5 text-xs text-stone-600 pt-2 border-t border-stone-100">
             <div className="flex justify-between">
               <span>{t("subtotal")}:</span>
@@ -198,17 +199,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onCheckout }) => {
               </div>
             )}
 
-            <div className="flex justify-between">
-              <span>{t("deliveryFee")}:</span>
-              <span className="text-stone-800 font-medium">
-                {deliveryFee === 0 ? "مجاناً" : `${deliveryFee.toFixed(2)} ${t("currency")}`}
-              </span>
-            </div>
-
             <div className="flex justify-between text-sm font-black text-[#4A0E17] pt-2 border-t border-stone-200">
               <span>{t("total")}:</span>
-              <span>{totalAmount.toFixed(2)} {t("currency")}</span>
+              <span>{itemsTotal.toFixed(2)} {t("currency")}</span>
             </div>
+
+            {/* تنبيه يوضح للعميل أن التوصيل يحدد في الخطوة التالية */}
+            <p className="text-[10px] text-stone-400 text-center pt-1">
+              * يتم تحديد خيار (التوصيل أو الاستلام من الفرع) في الخطوة التالية.
+            </p>
           </div>
 
           {/* زر المتابعة للدفع */}

@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useId } from "react";
+import React, { useState, useEffect, useId ,useMemo} from "react";
+import Image from "next/image";
 import {
   X,
   Gift,
   MapPin,
-  CreditCard,
   CheckCircle2,
   Truck,
   Clock,
@@ -18,15 +18,88 @@ import {
   AlertTriangle,
   Tag,
   Compass,
-  ExternalLink
+  ExternalLink,
+  Banknote,
+  Building2,
+  Copy,
+  Receipt,
+  Store,
+  QrCode
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase/supabase";
 
-// رقم الواتساب الرسمي للمتجر لاستقبال الطلبات
+// 📱 رقم الواتساب الرسمي المعتمد للمتجر
 const STORE_WHATSAPP_NUMBER = "966592320106";
+
+// 🏦 بيانات الحساب البنكي الرسمي لمصرف الراجحي المعتمد
+const BANK_DETAILS = {
+  bankName: "مصرف الراجحي (Al Rajhi Bank)",
+  brandTitle: "حساب الراجحي (BADEM)",
+  accountName: "مؤسسة رواد اللذه للحلويات",
+  accountNumber: "114000010006086241062",
+  iban: "SA5980000114608016241062",
+  qrImage: "/alrajhi-qr.png", // 👈 تأكد من وجود ملف alrajhi-qr.png داخل مجلد public
+};
+const SAUDI_CITIES = [
+  // 🌟 المدن الرئيسية (الأكثر طلباً)
+  "الرياض",
+  "جدة",
+  "مكة المكرمة",
+  "المدينة المنورة",
+  "الدمام",
+  "الخبر",
+  "الظهران",
+  
+  // 📍 المنطقة الوسطى
+  "الخرج",
+  "المجمعة",
+  "الدرعية",
+  "الدوادمي",
+  "وادي الدواسر",
+  "الزلفي",
+  "شقراء",
+
+  // 📍 منطقة القصيم
+  "بريدة",
+  "عنيزة",
+  "الرس",
+  "البكيرية",
+
+  // 📍 المنطقة الشرقية
+  "الأحساء (الهفوف والمبرز)",
+  "الجبيل",
+  "حفر الباطن",
+  "القطيف",
+  "الخفجي",
+  "رأس تنورة",
+
+  // 📍 المنطقة الغربية
+  "الطائف",
+  "ينبع",
+  "رابغ",
+
+  // 📍 المنطقة الجنوبية
+  "أبها",
+  "خميس مشيط",
+  "جازان",
+  "صبيا",
+  "نجران",
+  "الباحة",
+  "بيشة",
+  "محايل عسير",
+
+  // 📍 المنطقة الشمالية
+  "تبوك",
+  "حائل",
+  "عرعر",
+  "سكاكا",
+  "القريات",
+  "طريف",
+  "رفحاء"
+];
 
 interface CheckoutSystemProps {
   isOpen: boolean;
@@ -34,7 +107,23 @@ interface CheckoutSystemProps {
 }
 
 type Step = "details" | "payment" | "tracking";
-type PaymentMethod = "applepay" | "mada" | "card" | "cod";
+type DeliveryMode = "delivery" | "pickup";
+type PaymentMethod = "cod" | "bank_transfer";
+
+interface CartProductItem {
+  id: string | number;
+  title: string;
+  price: number | string;
+  quantity: number;
+  image?: string;
+  portion?: string;
+  portionNote?: string;
+  type?: string;
+  tierId?: string;
+  items?: { quantity: number; [key: string]: unknown }[];
+  summaryText?: string;
+  [key: string]: unknown;
+}
 
 export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose }) => {
   const { language, dir } = useLanguage();
@@ -42,22 +131,49 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const detailsFormId = useId();
 
   // استدعاء بيانات السلة
-  const cartContext = useCart() as any;
-  const { cart = [], totalAmount = 0, clearCart, setIsCartOpen } = cartContext;
-  const appliedCouponCode = cartContext.appliedCoupon || cartContext.couponCode || cartContext.coupon || "";
+  const { cart = [], clearCart, setIsCartOpen } = useCart();
+  const cartContext = useCart() as unknown as Record<string, unknown>;
+  const appliedCouponCode = (cartContext.appliedCoupon || cartContext.couponCode || cartContext.coupon || "") as string;
   const discountAmount = Number(cartContext.discountAmount) || 0;
-  const deliveryFee = Number(cartContext.deliveryFee ?? 15);
-  const subtotal = Number(cartContext.subtotal) || Math.max(0, totalAmount - deliveryFee + discountAmount);
+
+  // نمط الاستلام: توصيل (35 ر.س) أو استلام من الفرع (0 ر.س مجاناً)
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
+  const deliveryFee = deliveryMode === "delivery" ? 35 : 0;
+
+  // حساب المجموع الفرعي والمبلغ الإجمالي النهائي
+  const rawSubtotal = (cart as CartProductItem[]).reduce(
+    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+    0
+  );
+  const subtotal = Number(cartContext.subtotal) || rawSubtotal;
+  const finalCalculatedTotal = Math.max(0, subtotal - discountAmount + deliveryFee);
 
   // استدعاء بيانات المستخدم
   const { userName, setUserName, userPhone, setUserPhone, addOrder } = useUser();
   const [currentStep, setCurrentStep] = useState<Step>("details");
 
-  // بيانات العنوان والموقع
+  // بيانات العميل والعنوان
   const [customerName, setCustomerName] = useState(userName || "");
   const [phone, setPhone] = useState(userPhone || "");
   const [city, setCity] = useState("الرياض");
   const [district, setDistrict] = useState("");
+
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
+
+  // تصفية المدن فورياً أثناء كتابة العميل
+  const filteredCities = useMemo(() => {
+    if (!city.trim()) return SAUDI_CITIES;
+    return SAUDI_CITIES.filter((c) =>
+      c.toLowerCase().includes(city.toLowerCase().trim())
+    );
+  }, [city]);
+
+
+  // فحص صارم: هل المدينة المدخلة موجودة فعلياً في قائمة مدن المملكة الرسمية؟
+  const isCityValid = useMemo(() => {
+    return SAUDI_CITIES.includes(city.trim());
+  }, [city]);
+
   const [street, setStreet] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -70,29 +186,34 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [recipientName, setRecipientName] = useState("");
   const [giftMessage, setGiftMessage] = useState("");
 
-  // الدفع وحالة المعالجة
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("applepay");
+  // طريقة الدفع المعتمدة
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bank_transfer");
+  const [copiedField, setCopiedField] = useState<"iban" | "account" | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [couponWarning, setCouponWarning] = useState<string | null>(null);
 
-  // تتبع الطلب ورابط الواتساب الاحتياطي
+  // تتبع الطلب ورابط الواتساب
   const [orderId, setOrderId] = useState("");
   const [trackingProgress, setTrackingProgress] = useState(1);
   const [backupWhatsAppUrl, setBackupWhatsAppUrl] = useState<string | null>(null);
-  const etaMinutes = 35;
+  const etaMinutes = deliveryMode === "delivery" ? 40 : 20;
 
   // مزامنة بيانات المستخدم المسجلة تلقائياً
+ // مزامنة بيانات المستخدم المسجلة تلقائياً بدون تعليق تصيير الواجهة
   useEffect(() => {
-    if (userName && !customerName) setCustomerName(userName);
-    if (userPhone && !phone) setPhone(userPhone);
-  }, [userName, userPhone]);
+    const timer = setTimeout(() => {
+      if (userName && !customerName) setCustomerName(userName);
+      if (userPhone && !phone) setPhone(userPhone);
+    }, 0);
 
+    return () => clearTimeout(timer);
+  }, [userName, userPhone, customerName, phone]);
   // محاكاة مراحل تحضير الطلب في شاشة التتبع
   useEffect(() => {
     if (currentStep === "tracking") {
       const interval = setInterval(() => {
         setTrackingProgress((prev) => (prev < 4 ? prev + 1 : prev));
-      }, 5500);
+      }, 5000);
       return () => clearInterval(interval);
     }
   }, [currentStep]);
@@ -131,14 +252,14 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
             }
           }
         } catch (e) {
-          console.warn("Geocoding fetch non-blocking warning:", e);
+          console.warn("Geocoding non-blocking warning:", e);
         } finally {
           setIsLocating(false);
         }
       },
       (error) => {
         setIsLocating(false);
-        console.warn("Geolocation permission/error:", error.message);
+        console.warn("Geolocation permission error:", error.message);
         alert(
           isAr
             ? "يرجى تفعيل صلاحية الموقع في متصفحك ليتم تحديد موقعك آلياً."
@@ -147,6 +268,13 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
     );
+  };
+
+  // نسخ الآيبان أو رقم الحساب
+  const handleCopyText = (text: string, type: "iban" | "account") => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(type);
+    setTimeout(() => setCopiedField(null), 2500);
   };
 
   // 🛡️ فحص أمني لشروط الكوبون قبل الانتقال للدفع
@@ -192,7 +320,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
         if (!orderErr && previousOrders) {
           const hasUsedBefore = previousOrders.some(
-            (ord: any) => ord.notes && ord.notes.includes(appliedCouponCode)
+            (ord: { notes?: string }) => ord.notes && ord.notes.includes(appliedCouponCode)
           );
 
           if (hasUsedBefore) {
@@ -216,8 +344,14 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !phone.trim() || !district.trim()) {
-      alert(isAr ? "يرجى تعبئة كافة الحقول المطلوبة." : "Please fill in all required fields.");
+
+    if (!customerName.trim() || !phone.trim()) {
+      alert(isAr ? "يرجى إدخال اسم العميل ورقم الجوال." : "Please enter your name and phone number.");
+      return;
+    }
+
+    if (deliveryMode === "delivery" && !district.trim()) {
+      alert(isAr ? "يرجى تحديد الحي للتوصيل بدقة." : "Please enter your district.");
       return;
     }
 
@@ -235,8 +369,8 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
       );
 
       try {
-        if (cartContext?.removeCoupon) {
-          cartContext.removeCoupon();
+        if (typeof (cartContext as { removeCoupon?: () => void })?.removeCoupon === "function") {
+          (cartContext as { removeCoupon: () => void }).removeCoupon();
         }
       } catch (err) {
         console.error("Error clearing invalid coupon:", err);
@@ -249,67 +383,90 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     setCurrentStep("payment");
   };
 
-  // 📲 بناء رابط الواتساب بدقة متناهية
-  const createWhatsAppUrl = (generatedId: string, finalTotal: number, itemsToPrint: any[]) => {
+  // 📲 صياغة فاتورة الواتساب الفاخرة
+  const createWhatsAppUrl = (
+    generatedId: string,
+    finalTotal: number,
+    itemsToPrint: Array<{ title: string; portion?: string; quantity: number; price: number }>
+  ) => {
     const cleanPhone = STORE_WHATSAPP_NUMBER.replace(/[^0-9]/g, "");
 
     const itemsText = itemsToPrint
       .map(
-        (item: any, idx: number) =>
-          `  ${idx + 1}. *${item.title}*\n     ${item.portion ? `• ${item.portion}\n     ` : ""}العدد: ${item.quantity} | السعر: ${(Number(item.price) * item.quantity).toFixed(2)} ر.س`
+        (item, idx) =>
+          `  ${idx + 1}. *${item.title}*\n     ${item.portion ? `• الحجم: ${item.portion}\n     ` : ""}الكمية: ${item.quantity} | السعر: ${(Number(item.price) * item.quantity).toFixed(2)} ر.س`
       )
       .join("\n");
 
+    const deliveryModeText =
+      deliveryMode === "delivery"
+        ? `🚚 *نوع الاستلام:* توصيل إلى العنوان (رسوم التوصيل: 35.00 ر.س)\n• *المدينة:* ${city}\n• *الحي:* ${district}\n• *العنوان:* ${street || "محدد بالموقع"}${mapsLink ? `\n📍 *رابط خرائط GPS للمندوب:*\n${mapsLink}` : ""}`
+        : `🏪 *نوع الاستلام:* استلام شخصي من الفرع (مجاناً - 0.00 ر.س)\n• *الفرع:* فرع بادَم للحلويات الفاخرة`;
+
     const giftText = isGift
-      ? `\n🎁 *تفاصيل الإهداء الملكي:*\n• المهدَى إليه: ${recipientName || "غير محدد"}\n• رسالة البطاقة: "${giftMessage || "بدون رسالة"}"\n`
+      ? `\n🎁 *بيانات الإهداء الملكي:*\n• المهدَى إليه: ${recipientName || "غير محدد"}\n• رسالة البطاقة: "${giftMessage || "بدون رسالة"}"\n`
       : "";
 
-    const locationLinkText = mapsLink ? `\n📍 *موقع الخريطة (GPS للمندوب):*\n${mapsLink}\n` : "";
     const notesText = notes ? `\n📝 *ملاحظات خاصة:* ${notes}\n` : "";
-    const couponText = appliedCouponCode ? `\n🏷️ *الكود المطبق:* ${appliedCouponCode}\n` : "";
+    const couponText = appliedCouponCode ? `\n🏷️ *كود الخصم المطبق:* ${appliedCouponCode} (خصم: ${discountAmount.toFixed(2)} ر.س)\n` : "";
 
     const payMethodTitle =
-      paymentMethod === "applepay"
-        ? "Apple Pay "
-        : paymentMethod === "mada"
-        ? "بطاقة مدى Mada"
-        : paymentMethod === "card"
-        ? "بطاقة ائتمانية (Visa / MC)"
-        : "الدفع عند الاستلام (نقداً / مدى)";
+      paymentMethod === "bank_transfer"
+        ? `🏦 تحويل بنكي على ${BANK_DETAILS.brandTitle}\n• *اسم الحساب:* ${BANK_DETAILS.accountName}\n• *الآيبان:* ${BANK_DETAILS.iban}\n📎 *ملاحظة الدفع:* مرفق لكم صورة إشعار التحويل البنكي الآن.`
+        : "💵 الدفع نقداً عند الاستلام";
 
     const message = `✨ *طلب جديد من متجر بادَم BADEM BAKLAVA*
 ━━━━━━━━━━━━━━━━━━━
-🆔 *رقم الطلب:* ${generatedId}
+🆔 *رقم الطلب:* #${generatedId}
 
-👤 *بيانات المستلم والتوصيل:*
+👤 *بيانات العميل:*
 • *الاسم:* ${customerName}
 • *الجوال:* ${phone}
-• *المدينة:* ${city}
-• *الحي:* ${district}
-• *الشارع / التفاصيل:* ${street || "غير محدد"}${locationLinkText}${giftText}${notesText}${couponText}
-🛍️ *تفاصيل الطلب:*
+
+${deliveryModeText}${giftText}${notesText}${couponText}
+🛍️ *تفاصيل الأصناف والفاتورة:*
 ${itemsText}
 
 ━━━━━━━━━━━━━━━━━━━
-💳 *طريقة الدفع:* ${payMethodTitle}
-💰 *المبلغ الإجمالي:* *${finalTotal.toFixed(2)} ر.س*
+📦 *قيمة المنتجات:* ${subtotal.toFixed(2)} ر.س
+${deliveryMode === "delivery" ? "🚚 *رسوم التوصيل:* 35.00 ر.س\n" : "🏪 *رسوم الاستلام:* 0.00 ر.س (مجاناً)\n"}💰 *المبلغ الصافي المطلوب:* *${finalTotal.toFixed(2)} ر.س*
 ━━━━━━━━━━━━━━━━━━━
-✨ أتطلع لتأكيد طلبي وتجهيزه طازجاً!`;
+💳 *طريقة الدفع:*
+${payMethodTitle}
+━━━━━━━━━━━━━━━━━━━
+✨ أرجو تأكيد الطلب وتجهيزه طازجاً!`;
 
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
   };
 
-  // ✅ تأكيد الطلب والتحقق الصارم مع الحماية من مانع النوافذ المنبثقة
+  // ✅ تأكيد الطلب وحفظه في Supabase
   const handleConfirmOrder = async () => {
+    // 🔒 فحص أمان صارم قبل قبول الطلب:
+    if (deliveryMode === "delivery") {
+      if (!isCityValid) {
+        alert(isAr ? "عذراً، يرجى اختيار مدينة صحيحة ومعتمدة من القائمة لإتمام التوصيل." : "Please select a valid city from the list.");
+        return;
+      }
+      if (!district.trim() || district.trim().length < 2) {
+        alert(isAr ? "يرجى كتابة اسم الحي السكني بشكل صحيح." : "Please enter a valid district name.");
+        return;
+      }
+    }
     if (cart.length === 0) return;
     setIsProcessing(true);
 
     let verifiedSubtotal = 0;
-    const verifiedItems: any[] = [];
+    const verifiedItems: Array<{
+      title: string;
+      portion: string;
+      portionNote: string;
+      quantity: number;
+      price: number;
+      is_custom_box?: boolean;
+    }> = [];
 
     try {
-      for (const cartItem of cart) {
-        // 🔒 1. فحص البوكس المخصص
+      for (const cartItem of cart as CartProductItem[]) {
         if (cartItem.type === "custom_box" || cartItem.tierId) {
           let officialBoxPrice = Number(cartItem.price);
           let officialCapacity = 0;
@@ -329,14 +486,14 @@ ${itemsText}
               box_1000g: { price: 85, capacity: 8 },
               box_1500g: { price: 125, capacity: 12 },
             };
-            if (fallbackTiers[cartItem.tierId]) {
+            if (cartItem.tierId && fallbackTiers[cartItem.tierId]) {
               officialBoxPrice = fallbackTiers[cartItem.tierId].price;
               officialCapacity = fallbackTiers[cartItem.tierId].capacity;
             }
           }
 
           if (Array.isArray(cartItem.items) && officialCapacity > 0) {
-            const totalPieces = cartItem.items.reduce((sum: number, it: any) => sum + Number(it.quantity || 0), 0);
+            const totalPieces = cartItem.items.reduce((sum: number, it) => sum + Number(it.quantity || 0), 0);
             if (totalPieces !== officialCapacity) {
               throw new Error(`سعة البوكس غير مكتملة (${totalPieces} من أصل ${officialCapacity} قطع).`);
             }
@@ -352,9 +509,7 @@ ${itemsText}
             price: officialBoxPrice,
             is_custom_box: true,
           });
-        }
-        // 🔒 2. فحص المنتجات العادية
-        else {
+        } else {
           const { data: dbProduct } = await supabase
             .from("products")
             .select("base_price, title_ar")
@@ -368,13 +523,13 @@ ${itemsText}
           verifiedItems.push({
             title: cartItem.title,
             portion: cartItem.portionNote || cartItem.portion || "افتراضي",
+            portionNote: cartItem.portionNote || "الحجم الملكي",
             quantity: cartItem.quantity,
             price: officialPrice,
           });
         }
       }
 
-      // حساب الخصم المعتمد
       let verifiedDiscount = 0;
       if (appliedCouponCode) {
         const { data: couponData } = await supabase
@@ -388,14 +543,14 @@ ${itemsText}
         }
       }
 
-      const verifiedDeliveryFee = Number(deliveryFee) || 15;
-      const verifiedTotalAmount = Math.max(0, verifiedSubtotal - verifiedDiscount + verifiedDeliveryFee);
+      const verifiedTotalAmount = Math.max(0, verifiedSubtotal - verifiedDiscount + deliveryFee);
       const generatedId = `BDM-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const combinedNotes = [
+        deliveryMode === "pickup" ? "[استلام من الفرع]" : "[توصيل للمنزل]",
         notes.trim(),
         appliedCouponCode ? `[Coupon: ${appliedCouponCode}]` : "",
-        mapsLink ? `[GPS: ${mapsLink}]` : "",
+        mapsLink && deliveryMode === "delivery" ? `[GPS: ${mapsLink}]` : "",
       ]
         .filter(Boolean)
         .join(" | ");
@@ -404,9 +559,9 @@ ${itemsText}
         id: generatedId,
         customer_name: customerName.trim(),
         customer_phone: phone.trim(),
-        city: city.trim(),
-        district: district.trim(),
-        street: street.trim(),
+        city: deliveryMode === "delivery" ? city.trim() : "استلام من الفرع",
+        district: deliveryMode === "delivery" ? district.trim() : "الفرع الرئيسي",
+        street: deliveryMode === "delivery" ? street.trim() : "استلام مباشر",
         notes: combinedNotes,
         is_gift: isGift,
         recipient_name: isGift ? recipientName.trim() : null,
@@ -414,16 +569,15 @@ ${itemsText}
         items: verifiedItems,
         subtotal: verifiedSubtotal,
         discount_amount: verifiedDiscount,
-        delivery_fee: verifiedDeliveryFee,
+        delivery_fee: deliveryFee,
         total_amount: verifiedTotalAmount,
-        payment_method: paymentMethod,
+        payment_method: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         status: "pending",
       };
 
       const { error: insertError } = await supabase.from("orders").insert([orderPayload]);
       if (insertError) throw insertError;
 
-      // تحديث استخدام الكوبون
       if (appliedCouponCode) {
         const { data: couponData } = await supabase
           .from("coupons")
@@ -445,16 +599,15 @@ ${itemsText}
 
         try {
           const localCoupons = JSON.parse(localStorage.getItem("badem_saved_coupons") || "[]");
-          const filtered = localCoupons.filter((c: any) => c.code !== appliedCouponCode);
+          const filtered = localCoupons.filter((c: { code: string }) => c.code !== appliedCouponCode);
           localStorage.setItem("badem_saved_coupons", JSON.stringify(filtered));
         } catch {
-          // تجاوز أخطاء التخزين المحلي الصامتة
+          // تجاوز صامت للتخزين المحلي
         }
       }
 
       setOrderId(generatedId);
 
-      // إنشاء رابط الواتساب وفتحه مع حفظه كنسخة احتياطية في حال حجبه مانع النوافذ
       const waUrl = createWhatsAppUrl(generatedId, verifiedTotalAmount, verifiedItems);
       setBackupWhatsAppUrl(waUrl);
 
@@ -473,14 +626,15 @@ ${itemsText}
           items: verifiedItems,
           totalAmount: verifiedTotalAmount,
           status: "pending",
-          paymentMethod: paymentMethod,
+          paymentMethod: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         });
       }
 
       clearCart();
-    } catch (err: any) {
-      console.error("Secure order processing error:", err);
-      alert(err.message || (isAr ? "حدث خطأ أثناء معالجة الطلب، يرجى المحاولة مرة أخرى." : "Error processing order, please try again."));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "خطأ غير متوقع";
+      console.error("Order processing error:", err);
+      alert(msg || (isAr ? "حدث خطأ أثناء معالجة الطلب، يرجى المحاولة مرة أخرى." : "Error processing order."));
     } finally {
       setIsProcessing(false);
     }
@@ -493,7 +647,7 @@ ${itemsText}
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4 animate-in fade-in duration-200 select-none">
       <div className="bg-[#FAF5ED] w-full max-w-2xl rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl border border-[#4A0E17]/20 max-h-[92vh] flex flex-col relative text-[#2D2321]">
         
         {/* الترويسة الفاخرة */}
@@ -504,17 +658,18 @@ ${itemsText}
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base text-white tracking-wide">
-                {currentStep === "details" && (isAr ? "بيانات التوصيل والموقع" : "Delivery & Address")}
-                {currentStep === "payment" && (isAr ? "طريقة الدفع الفاخرة" : "Payment Method")}
+                {currentStep === "details" && (isAr ? "طريقة الاستلام والبيانات" : "Fulfillment & Address")}
+                {currentStep === "payment" && (isAr ? "طريقة الدفع وتأكيد الحجز" : "Payment & Confirmation")}
                 {currentStep === "tracking" && (isAr ? "تتبع الطلب المباشر" : "Live Tracking")}
               </h3>
               <p className="text-[10px] text-stone-300">
-                {currentStep === "tracking" ? `رقم الطلب: ${orderId}` : `إجمالي الطلب: ${totalAmount.toFixed(2)} ر.س`}
+                {currentStep === "tracking" ? `رقم الطلب: #${orderId}` : `إجمالي الطلب: ${finalCalculatedTotal.toFixed(2)} ر.س`}
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={currentStep === "tracking" ? handleFinishClose : onClose}
             className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center transition cursor-pointer"
             aria-label="Close modal"
@@ -530,16 +685,16 @@ ${itemsText}
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${currentStep === "details" ? "bg-[#4A0E17] text-white" : "bg-emerald-600 text-white"}`}>
                 {currentStep === "payment" ? <Check className="w-3 h-3" /> : "1"}
               </span>
-              <span>{isAr ? "العنوان والموقع" : "Delivery"}</span>
+              <span>{isAr ? "الاستلام والبيانات" : "Details"}</span>
             </div>
 
-            <span className="w-8 h-[1px] bg-stone-300" />
+            <span className="w-8 h-px bg-stone-300" />
 
             <div className={`flex items-center gap-1.5 ${currentStep === "payment" ? "text-[#4A0E17]" : "text-stone-400"}`}>
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${currentStep === "payment" ? "bg-[#4A0E17] text-white" : "bg-stone-200 text-stone-600"}`}>
                 2
               </span>
-              <span>{isAr ? "الدفع والإنهاء" : "Payment"}</span>
+              <span>{isAr ? "طريقة الدفع والتأكيد" : "Payment"}</span>
             </div>
           </div>
         )}
@@ -547,10 +702,61 @@ ${itemsText}
         {/* محتوى الشاشة */}
         <div className="overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-5 flex-1 overscroll-contain">
           
-          {/* الخطوة 1: العنوان والتفاصيل */}
+          {/* الخطوة 1: اختيار التوصيل أو الاستلام والبيانات */}
           {currentStep === "details" && (
             <form id={detailsFormId} onSubmit={handleProceedToPayment} className="space-y-4">
               
+              {/* 🌟 1. مفتاح الاختيار: توصيل للموقع أو استلام من الفرع */}
+              <div className="bg-white p-3.5 sm:p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-2.5">
+                <span className="block text-[11px] font-black text-[#4A0E17]">
+                  {isAr ? "اختر طريقة استلام الطلب الملكي:" : "Select Fulfillment Method:"}
+                </span>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMode("delivery")}
+                    className={`p-3 sm:p-3.5 rounded-2xl border text-right transition flex items-center justify-between cursor-pointer ${
+                      deliveryMode === "delivery"
+                        ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
+                        : "border-stone-200 bg-[#FAF5ED]/50 hover:bg-[#FAF5ED]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${deliveryMode === "delivery" ? "bg-[#4A0E17] text-white" : "bg-stone-200 text-stone-600"}`}>
+                        <Truck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-stone-900 block">توصيل للموقع</span>
+                        <span className="text-[10px] text-stone-500 font-bold">رسوم التوصيل: 35 ر.س</span>
+                      </div>
+                    </div>
+                    <CheckCircle2 className={`w-4 h-4 shrink-0 ${deliveryMode === "delivery" ? "text-[#4A0E17]" : "text-stone-300"}`} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMode("pickup")}
+                    className={`p-3 sm:p-3.5 rounded-2xl border text-right transition flex items-center justify-between cursor-pointer ${
+                      deliveryMode === "pickup"
+                        ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
+                        : "border-stone-200 bg-[#FAF5ED]/50 hover:bg-[#FAF5ED]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${deliveryMode === "pickup" ? "bg-[#4A0E17] text-white" : "bg-stone-200 text-stone-600"}`}>
+                        <Store className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-stone-900 block">استلام من الفرع</span>
+                        <span className="text-[10px] text-emerald-700 font-black">مجاناً (0 ر.س)</span>
+                      </div>
+                    </div>
+                    <CheckCircle2 className={`w-4 h-4 shrink-0 ${deliveryMode === "pickup" ? "text-[#4A0E17]" : "text-stone-300"}`} />
+                  </button>
+                </div>
+              </div>
+
               {couponWarning && (
                 <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-rose-800 animate-in fade-in duration-200">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -560,40 +766,13 @@ ${itemsText}
                 </div>
               )}
 
+              {/* 🌟 2. حقول بيانات العميل الأساسية */}
               <div className="bg-white p-4 sm:p-5 rounded-3xl border border-stone-200/80 space-y-4 shadow-2xs">
-                <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                  <h4 className="text-xs font-black text-[#4A0E17] uppercase tracking-wider flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-[#C59B27]" />
-                    <span>{isAr ? "معلومات التوصيل والموقع" : "Delivery Information"}</span>
+                <div className="border-b border-stone-100 pb-2">
+                  <h4 className="text-xs font-black text-[#4A0E17] uppercase tracking-wider">
+                    {isAr ? "بيانات العميل المستلم" : "Customer Contact Details"}
                   </h4>
-
-                  <button
-                    type="button"
-                    onClick={handleGetLocation}
-                    disabled={isLocating}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A0E17]/10 hover:bg-[#4A0E17]/20 text-[#4A0E17] rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
-                  >
-                    {isLocating ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#4A0E17]" />
-                    ) : (
-                      <Compass className="w-3.5 h-3.5 text-[#C59B27]" />
-                    )}
-                    <span>{isLocating ? (isAr ? "جاري تحديد موقعك..." : "Locating...") : (isAr ? "تحديد موقعي بالـ GPS" : "Use GPS Location")}</span>
-                  </button>
                 </div>
-
-                {mapsLink && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-2.5 flex items-center justify-between text-xs text-emerald-800">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>تم تحديد إحداثيات موقعك بدقة وسيتم إرفاقها للمندوب! 📍</span>
-                    </span>
-                    <a href={mapsLink} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-900 font-black underline flex items-center gap-1">
-                      <span>معاينة الخريطة</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -605,7 +784,7 @@ ${itemsText}
                       required
                       value={customerName}
                       onChange={(e) => { setCustomerName(e.target.value); setCouponWarning(null); }}
-                      placeholder="مثال: محمد العتيبي"
+                      placeholder="مثال: عبدالمجيد السبيعي"
                       className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
                     />
                   </div>
@@ -625,51 +804,160 @@ ${itemsText}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      {isAr ? "المدينة *" : "City *"}
-                    </label>
-                    <select
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold cursor-pointer"
-                    >
-                      <option value="الرياض">الرياض (Riyadh)</option>
-                      <option value="جدة">جدة (Jeddah)</option>
-                      <option value="الدمام">الدمام (Dammam)</option>
-                      <option value="مكة المكرمة">مكة المكرمة (Makkah)</option>
-                      <option value="المدينة المنورة">المدينة المنورة (Madinah)</option>
-                    </select>
-                  </div>
+                {/* 🌟 3. حقول العنوان تظهر فقط عند اختيار التوصيل للموقع */}
+                {deliveryMode === "delivery" ? (
+                  <div className="space-y-3 pt-2 border-t border-stone-100 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                        <MapPin className="w-4 h-4 text-[#C59B27]" />
+                        <span>تفاصيل موقع التوصيل:</span>
+                      </span>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      {isAr ? "الحي *" : "District *"}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={district}
-                      onChange={(e) => setDistrict(e.target.value)}
-                      placeholder="مثال: حي المحمدية"
-                      className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
-                    />
-                  </div>
-                </div>
+                      <button
+                        type="button"
+                        onClick={handleGetLocation}
+                        disabled={isLocating}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A0E17]/10 hover:bg-[#4A0E17]/20 text-[#4A0E17] rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                      >
+                        {isLocating ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#4A0E17]" />
+                        ) : (
+                          <Compass className="w-3.5 h-3.5 text-[#C59B27]" />
+                        )}
+                        <span>{isLocating ? (isAr ? "جاري التحديد..." : "Locating...") : (isAr ? "تحديد موقعي بالـ GPS" : "Use GPS")}</span>
+                      </button>
+                    </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                    {isAr ? "الشارع / رقم المبنى أو تفاصيل المنزل" : "Street / House Details"}
-                  </label>
+                    {mapsLink && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-2.5 flex items-center justify-between text-xs text-emerald-800">
+                        <span className="flex items-center gap-1.5 font-bold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>تم حفظ إحداثيات موقعك بدقة وسيتم إرفاقها للمندوب! 📍</span>
+                        </span>
+                        <a href={mapsLink} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-900 font-black underline flex items-center gap-1">
+                          <span>معاينة</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                  
+  {/* 🇸🇦 حقل اختيار المدينة الذكي والمحمي */}
+              <div className="relative">
+                <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                  {isAr ? "المدينة *" : "City *"}
+                </label>
+                
+                <div className="relative">
                   <input
                     type="text"
-                    value={street}
-                    onChange={(e) => setStreet(e.target.value)}
-                    placeholder="اسم الشارع، رقم الشقة أو الفيلا"
-                    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
+                    required
+                    value={city}
+                    onFocus={() => setIsCityDropdownOpen(true)}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      setIsCityDropdownOpen(true);
+                    }}
+                    placeholder={isAr ? "ابحث أو اختر مدينتك..." : "Search your city..."}
+                    className={`w-full bg-[#FAF5ED] border rounded-xl px-3 py-2 text-xs font-bold text-stone-800 transition focus:outline-hidden ${
+                      city && !isCityValid
+                        ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
+                        : isCityValid
+                        ? "border-emerald-400 focus:border-emerald-600 bg-emerald-50/20"
+                        : "border-stone-200 focus:border-[#4A0E17]"
+                    }`}
                   />
+
+                  {/* أيقونة حالة التحقق */}
+                  {isCityValid && (
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs pointer-events-none">
+                      ✓
+                    </span>
+                  )}
                 </div>
+
+                {/* القائمة المنسدلة الذكية للبحث السريع */}
+                {isCityDropdownOpen && (
+                  <>
+                    {/* طبقة إغلاق عند النقر في أي مكان آخر */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsCityDropdownOpen(false)}
+                    />
+
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-stone-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto no-scrollbar py-1">
+                      {filteredCities.length === 0 ? (
+                        <div className="p-3 text-center text-xs text-rose-600 font-bold">
+                          {isAr ? "لا توجد مدينة بهذا الاسم في المملكة" : "City not found"}
+                        </div>
+                      ) : (
+                        filteredCities.map((cityName) => (
+                          <button
+                            key={cityName}
+                            type="button"
+                            onClick={() => {
+                              setCity(cityName);
+                              setIsCityDropdownOpen(false);
+                            }}
+                            className={`w-full text-right px-3.5 py-2 text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                              city === cityName
+                                ? "bg-[#4A0E17] text-[#E5C058]"
+                                : "hover:bg-stone-100 text-stone-700"
+                            }`}
+                          >
+                            <span>{cityName}</span>
+                            {city === cityName && <span>✓</span>}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* تحذير صارم يظهر فوراً إذا كتب حرفاً غير مكتمل أو مدينة وهمية */}
+                {city && !isCityValid && (
+                  <span className="text-[10.5px] text-rose-600 font-bold mt-1 block animate-in fade-in">
+                    ⚠️ يرجى اختيار المدينة المعتمدة من القائمة
+                  </span>
+                )}
+              </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          {isAr ? "الحي *" : "District *"}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={district}
+                          onChange={(e) => setDistrict(e.target.value)}
+                          placeholder="مثال: حي النخيل"
+                          className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                        {isAr ? "الشارع وتفاصيل المنزل (اختياري):" : "Street / House Details:"}
+                      </label>
+                      <input
+                        type="text"
+                        value={street}
+                        onChange={(e) => setStreet(e.target.value)}
+                        placeholder="اسم الشارع أو رقم الفيلا"
+                        className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50/80 border border-amber-200/80 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 animate-in fade-in duration-200">
+                    <Store className="w-5 h-5 text-[#4A0E17] shrink-0" />
+                    <p className="leading-relaxed">
+                      <strong>الاستلام من الفرع الرئيسي:</strong> لا حاجة لتحديد العنوان، سيتم تجهيز طلبكم وتغليفه طازجاً في المحل بانتظار حضوركم الكريم.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* قسم الإهداء الفاخر */}
@@ -681,10 +969,10 @@ ${itemsText}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-stone-900">
-                        {isAr ? "هل هذا الطلب إهداء لشخص آخر؟" : "Is this order a gift?"}
+                        {isAr ? "هل هذا الطلب إهداء لشخص عزيز؟" : "Is this order a gift?"}
                       </h4>
                       <p className="text-[10px] text-stone-500">
-                        {isAr ? "إضافة تغليف حريري وبطاقة إهداء فاخرة مجاناً" : "Free custom ribbon & gift card"}
+                        {isAr ? "إضافة شريطة وبطاقة إهداء ملكية مجاناً" : "Free ribbon & gift card"}
                       </p>
                     </div>
                   </div>
@@ -714,13 +1002,13 @@ ${itemsText}
 
                     <div>
                       <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                        {isAr ? "رسالة الإهداء (تُكتب بخط عربي فاخر):" : "Gift Card Message:"}
+                        {isAr ? "رسالة الإهداء:" : "Gift Message:"}
                       </label>
                       <textarea
                         rows={2}
                         value={giftMessage}
                         onChange={(e) => setGiftMessage(e.target.value)}
-                        placeholder="اكتب تهنئتك هنا..."
+                        placeholder="اكتب تهنئتك ومشاعرك هنا..."
                         className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] resize-none"
                       />
                     </div>
@@ -730,30 +1018,32 @@ ${itemsText}
 
               <div>
                 <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                  {isAr ? "ملاحظات إضافية للمُخبز أو المندوب:" : "Special Instructions:"}
+                  {isAr ? "ملاحظات إضافية:" : "Special Instructions:"}
                 </label>
                 <input
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="مثال: يرجى تسليم الطلب عند الباب الخلفي..."
+                  placeholder="أي توصيات خاصة لتحضير الطلب..."
                   className="w-full bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
                 />
               </div>
             </form>
           )}
 
-          {/* الخطوة 2: الدفع وملخص الطلب */}
+          {/* الخطوة 2: الدفع وبطاقة الراجحي والباركود */}
           {currentStep === "payment" && (
             <div className="space-y-4">
+              
+              {/* ملخص السلة والتوصيل */}
               <div className="bg-white p-4 rounded-2xl border border-stone-200/80 space-y-2 shadow-2xs text-xs">
                 <div className="flex justify-between font-bold text-stone-800 pb-2 border-b border-stone-100">
-                  <span>{isAr ? "ملخص المنتجات:" : "Cart Summary:"}</span>
+                  <span>{isAr ? "ملخص الأصناف المطلوبة:" : "Cart Summary:"}</span>
                   <span className="text-[#4A0E17]">{cart.length} أصناف</span>
                 </div>
-                {cart.map((item: any, i: number) => (
+                {(cart as CartProductItem[]).map((item, i) => (
                   <div key={i} className="flex justify-between text-stone-600">
-                    <span className="truncate max-w-[200px]">{item.title} ({item.portion || item.portionNote || "افتراضي"})</span>
+                    <span className="truncate max-w-52">{item.title} ({item.portion || item.portionNote || "قياسي"})</span>
                     <span className="font-bold">{(Number(item.price) * item.quantity).toFixed(2)} ر.س</span>
                   </div>
                 ))}
@@ -768,90 +1058,161 @@ ${itemsText}
                   </div>
                 )}
 
+                <div className="flex justify-between text-stone-600 pt-1">
+                  <span>{deliveryMode === "delivery" ? "رسوم التوصيل للموقع:" : "الاستلام من الفرع:"}</span>
+                  <span className="font-bold">{deliveryMode === "delivery" ? "35.00 ر.س" : "0.00 ر.س (مجاناً)"}</span>
+                </div>
+
                 <div className="flex justify-between font-black text-sm text-[#4A0E17] pt-2 border-t border-stone-100">
-                  <span>المبلغ الإجمالي المطلوب:</span>
-                  <span>{totalAmount.toFixed(2)} ر.س</span>
+                  <span>المبلغ الصافي النهائي المطلوب:</span>
+                  <span>{finalCalculatedTotal.toFixed(2)} ر.س</span>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-stone-800">
-                  {isAr ? "اختر طريقة الدفع المناسبة:" : "Select Payment Method:"}
+              {/* اختيار وسيلة الدفع */}
+              <div className="space-y-3">
+                <label className="block text-xs font-black text-stone-800">
+                  {isAr ? "حدد طريقة الدفع المعتمدة:" : "Select Payment Method:"}
                 </label>
 
+                {/* 1. خيار التحويل البنكي */}
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod("applepay")}
-                  className={`w-full p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer ${
-                    paymentMethod === "applepay"
+                  onClick={() => setPaymentMethod("bank_transfer")}
+                  className={`w-full p-4 rounded-2xl border transition flex items-center justify-between cursor-pointer ${
+                    paymentMethod === "bank_transfer"
                       ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
                       : "border-stone-200 bg-white hover:border-stone-300"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="bg-black text-white px-2.5 py-1 rounded-lg text-xs font-black tracking-wider">
-                      Pay
-                    </span>
-                    <span className="text-xs font-bold text-stone-900">Apple Pay</span>
+                    <div className="w-10 h-10 rounded-xl bg-[#4A0E17]/10 flex items-center justify-center text-[#4A0E17]">
+                      <Building2 className="w-5 h-5 text-[#C59B27]" />
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-black text-stone-900 block">{BANK_DETAILS.brandTitle}</span>
+                      <span className="text-[10px] text-stone-400">تحويل مباشر مع باركود الراجحي وإشعار الواتساب</span>
+                    </div>
                   </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                    أسرع وأشمل
+                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2.5 py-1 rounded-full border border-amber-300/50">
+                    موصى به ⭐
                   </span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("mada")}
-                  className={`w-full p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer ${
-                    paymentMethod === "mada"
-                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
-                      : "border-stone-200 bg-white hover:border-stone-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="bg-emerald-700 text-white text-[10px] font-black px-2 py-1 rounded-md">
-                      MADA مدى
-                    </span>
-                    <span className="text-xs font-bold text-stone-900">بطاقة مدى البنكية</span>
-                  </div>
-                  <CreditCard className="w-4 h-4 text-stone-400" />
-                </button>
+                {/* بطاقة الحساب البنكي الفاخرة مع الباركود */}
+                {paymentMethod === "bank_transfer" && (
+                  <div className="bg-gradient-to-br from-[#4A0E17] via-[#3D0A11] to-[#2B050B] text-white p-5 rounded-3xl border border-[#C59B27]/40 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                    
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-[#E5C058]" />
+                          <span className="text-xs font-black text-[#FAF5ED]">{BANK_DETAILS.brandTitle}</span>
+                        </div>
+                        <p className="text-[11px] text-[#E5C058] font-bold mt-0.5">
+                          {BANK_DETAILS.accountName}
+                        </p>
+                      </div>
+                      <span className="text-[9.5px] bg-[#E5C058]/15 text-[#E5C058] border border-[#E5C058]/30 font-bold px-2.5 py-1 rounded-full">
+                        {BANK_DETAILS.bankName}
+                      </span>
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("card")}
-                  className={`w-full p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer ${
-                    paymentMethod === "card"
-                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
-                      : "border-stone-200 bg-white hover:border-stone-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="bg-blue-800 text-white text-[10px] font-black px-2 py-1 rounded-md">
-                      VISA / MC
-                    </span>
-                    <span className="text-xs font-bold text-stone-900">البطاقات الائتمانية</span>
-                  </div>
-                  <CreditCard className="w-4 h-4 text-stone-400" />
-                </button>
+                    <div className="flex flex-col sm:flex-row items-center gap-4 bg-black/25 p-3.5 rounded-2xl border border-white/10">
+                      
+                      {/* الباركود المستدعى محلياً بأمان وبدون أخطاء */}
+                      <div className="bg-white p-2.5 rounded-2xl shadow-md shrink-0 flex flex-col items-center justify-center">
+                        <div className="relative w-28 h-28">
+                          <Image
+                            src={BANK_DETAILS.qrImage}
+                            alt="Al Rajhi Official QR"
+                            fill
+                            sizes="112px"
+                            priority
+                            className="object-contain"
+                          />
+                        </div>
+                        <span className="text-[8px] text-stone-500 font-bold mt-1 flex items-center gap-0.5">
+                          <QrCode className="w-2.5 h-2.5 text-[#4A0E17]" />
+                          <span>امسح بكاميرا الراجحي</span>
+                        </span>
+                      </div>
 
+                      <div className="flex-1 w-full space-y-2.5 text-xs">
+                        
+                        {/* رقم الحساب */}
+                        <div className="bg-white/5 p-2.5 rounded-xl border border-white/10">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-stone-300">رقم الحساب:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(BANK_DETAILS.accountNumber, "account")}
+                              className="text-[10px] text-[#E5C058] hover:text-white transition font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedField === "account" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedField === "account" ? "تم النسخ!" : "نسخ الرقم"}</span>
+                            </button>
+                          </div>
+                          <div className="font-mono text-xs sm:text-sm font-black text-[#FAF5ED] tracking-wider select-all" dir="ltr">
+                            {BANK_DETAILS.accountNumber}
+                          </div>
+                        </div>
+
+                        {/* رقم الآيبان */}
+                        <div className="bg-white/5 p-2.5 rounded-xl border border-white/10">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-stone-300">الآيبان الدولي (IBAN):</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(BANK_DETAILS.iban, "iban")}
+                              className="text-[10px] text-[#E5C058] hover:text-white transition font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedField === "iban" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedField === "iban" ? "تم النسخ!" : "نسخ الآيبان"}</span>
+                            </button>
+                          </div>
+                          <div className="font-mono text-[11px] sm:text-xs font-black text-[#FAF5ED] tracking-wide select-all" dir="ltr">
+                            {BANK_DETAILS.iban}
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
+                    <div className="bg-black/30 p-2.5 rounded-xl border border-white/10 flex items-start gap-2 text-[10.5px] text-amber-200/90 leading-relaxed">
+                      <Receipt className="w-4 h-4 text-[#E5C058] shrink-0 mt-0.5" />
+                      <span>
+                        المبلغ المطلوب تحويله: (<strong>{finalCalculatedTotal.toFixed(2)} ر.س</strong>). يرجى إرفاق لقطة شاشة لإشعار التحويل البنكي مباشرة في محادثة الواتساب فور فتحها لتوثيق الطلب.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. خيار الدفع نقداً */}
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("cod")}
-                  className={`w-full p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer ${
+                  className={`w-full p-4 rounded-2xl border transition flex items-center justify-between cursor-pointer ${
                     paymentMethod === "cod"
                       ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
                       : "border-stone-200 bg-white hover:border-stone-300"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="bg-amber-600 text-white text-[10px] font-black px-2 py-1 rounded-md">
-                      COD
-                    </span>
-                    <span className="text-xs font-bold text-stone-900">الدفع عند الاستلام</span>
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-700">
+                      <Banknote className="w-5 h-5 text-amber-700" />
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-black text-stone-900 block">الدفع نقداً</span>
+                      <span className="text-[10px] text-stone-400">
+                        {deliveryMode === "delivery" ? "تسليم المبلغ للمندوب يداً بيد عند الوصول" : "الدفع عند الاستلام داخل المحل"}
+                      </span>
+                    </div>
                   </div>
+                  <CheckCircle2 className={`w-5 h-5 ${paymentMethod === "cod" ? "text-[#4A0E17]" : "text-stone-300"}`} />
                 </button>
               </div>
+
             </div>
           )}
 
@@ -861,22 +1222,21 @@ ${itemsText}
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center space-y-2">
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
                 <h4 className="font-black text-sm text-emerald-900">
-                  {isAr ? "تم استلام طلبك وتمريره للواتساب بنجاح!" : "Order Placed Successfully!"}
+                  {isAr ? "تم تسجيل طلبك وتجهيز رسالة الواتساب!" : "Order Placed Successfully!"}
                 </h4>
                 <p className="text-xs text-emerald-700">
                   {isAr
-                    ? `شكراً ${customerName}، تم توثيق الفاتورة برقم (${orderId}) وجاري تحضير طلبك بعناية.`
-                    : `Thank you ${customerName}, your order (${orderId}) is now registered.`}
+                    ? `شكراً ${customerName}، تم توثيق الفاتورة برقم (#${orderId}). ${paymentMethod === "bank_transfer" ? "يرجى إرفاق إشعار التحويل في المحادثة." : "سيتم تجهيز طلبك طازجاً."}`
+                    : `Thank you ${customerName}, your order (#${orderId}) is now registered.`}
                 </p>
 
-                {/* زر احتياطي في حال منع المتصفح فتح الواتساب تلقائياً */}
                 {backupWhatsAppUrl && (
                   <div className="pt-2">
                     <a
                       href={backupWhatsAppUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs transition cursor-pointer"
                     >
                       <MessageCircle className="w-4 h-4" />
                       <span>فتح محادثة الواتساب وتأكيد الطلب 📲</span>
@@ -889,7 +1249,7 @@ ${itemsText}
                 <div className="flex items-center justify-between text-xs font-bold text-stone-800 border-b border-stone-100 pb-2">
                   <span className="flex items-center gap-1.5">
                     <Clock className="w-4 h-4 text-[#4A0E17]" />
-                    <span>وقت الوصول التقديري:</span>
+                    <span>الوقت التقديري المتوقع:</span>
                   </span>
                   <span className="text-[#4A0E17] font-black text-sm">{etaMinutes} دقيقة</span>
                 </div>
@@ -900,8 +1260,8 @@ ${itemsText}
                       1
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">تم تأكيد الطلب وإرسال الفاتورة</h5>
-                      <p className="text-[10px] text-stone-500">تم استلام طلبك وتمريره للشيف للبدء بالتجهيز.</p>
+                      <h5 className="text-xs font-bold text-stone-900">تم تسجيل الطلب وتوليد الفاتورة</h5>
+                      <p className="text-[10px] text-stone-500">تم توثيق بياناتك وحجز الأصناف.</p>
                     </div>
                   </div>
 
@@ -910,8 +1270,8 @@ ${itemsText}
                       2
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">التجهيز والخَبز في الفرن</h5>
-                      <p className="text-[10px] text-stone-500">تجهيز الرقائق والسمن والقطر الدافئ.</p>
+                      <h5 className="text-xs font-bold text-stone-900">الخَبز والتجهيز الطازج</h5>
+                      <p className="text-[10px] text-stone-500">سمن بلدي نقي وفستق عنتابي فاخر.</p>
                     </div>
                   </div>
 
@@ -920,8 +1280,8 @@ ${itemsText}
                       3
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">التغليف الملكي وتسليم المندوب</h5>
-                      <p className="text-[10px] text-stone-500">وضع الصندوق والتغليف الحريري المخصص.</p>
+                      <h5 className="text-xs font-bold text-stone-900">التغليف الملكي الفاخر</h5>
+                      <p className="text-[10px] text-stone-500">تغليف البوكس الحريري مع كرت الإهداء.</p>
                     </div>
                   </div>
 
@@ -930,8 +1290,14 @@ ${itemsText}
                       4
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">جاري التوصيل إلى موقعك</h5>
-                      <p className="text-[10px] text-stone-500">المندوب في طريقه إليك في حي {district || "المحدد"}.</p>
+                      <h5 className="text-xs font-bold text-stone-900">
+                        {deliveryMode === "delivery" ? "المندوب في طريقه إليك" : "جاهز للاستلام من الفرع"}
+                      </h5>
+                      <p className="text-[10px] text-stone-500">
+                        {deliveryMode === "delivery"
+                          ? `المندوب متوجه لعنوانكم في حي ${district || "المحدد"}.`
+                          : "طلبكم الفاخر بانتظاركم داخل فرع بادَم."}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -972,12 +1338,12 @@ ${itemsText}
                 {isProcessing ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>جاري معالجة وتأمين الطلب...</span>
+                    <span>جاري توثيق وتأمين الطلب...</span>
                   </div>
                 ) : (
                   <>
                     <MessageCircle className="w-5 h-5 text-emerald-400" />
-                    <span>تأكيد وإرسال عبر الواتساب ({totalAmount.toFixed(2)} ر.س)</span>
+                    <span>تأكيد وإرسال عبر الواتساب ({finalCalculatedTotal.toFixed(2)} ر.س)</span>
                   </>
                 )}
               </button>
@@ -986,6 +1352,7 @@ ${itemsText}
 
           {currentStep === "tracking" && (
             <button
+              type="button"
               onClick={handleFinishClose}
               className="w-full bg-[#4A0E17] hover:bg-[#36070E] text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95 cursor-pointer"
             >

@@ -3,48 +3,70 @@ import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-// استخدام مفتاح الخدمة إن وجد أو المفتاح العام للأمان
 const supabaseKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// الحد الأقصى للحجم: 5 ميجابايت
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+// أنواع الصور الآمنة المسموح بها فقط
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+// الأقسام المسموح برفع الصور إليها
+const ALLOWED_TARGETS = ["product", "banner", "category"];
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const target = (formData.get("target") as string) || "product";
+    const file = formData.get("file") as File | null;
+    let target = (formData.get("target") as string) || "product";
 
     if (!file) {
       return NextResponse.json({ error: "لم يتم اختيار أي ملف" }, { status: 400 });
     }
 
-    // التحقق من نوع الملف لضمان أمان السيرفر
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "يرجى رفع ملف صورة صالح فقط" }, { status: 400 });
+    // 🔒 1. فحص الحجم لمنع استهلاك الذاكرة
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "حجم الصورة كبير جداً، الحد الأقصى المسموح به هو 5 ميجابايت" },
+        { status: 400 }
+      );
+    }
+
+    // 🔒 2. فحص نوع الملف المسموح حصراً
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      return NextResponse.json(
+        { error: "نوع الملف غير مدعوم، يرجى رفع صور بصيغة JPG أو PNG أو WebP فقط" },
+        { status: 400 }
+      );
+    }
+
+    // 🔒 3. حماية مسار المجلد
+    if (!ALLOWED_TARGETS.includes(target)) {
+      target = "product";
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // ⚡ تحديد الأبعاد المثالية بناءً على موضع العرض لمنع أي تشويش أو حجم زائد
+    // تحديد أبعاد وضغط الصورة بحسب الاستخدام
     let maxWidth = 800;
     let maxHeight = 800;
     let quality = 80;
 
     if (target === "banner") {
-      maxWidth = 1280;
-      maxHeight = 720;
+      maxWidth = 1200;
+      maxHeight = 600;
       quality = 85;
     } else if (target === "category") {
-      maxWidth = 450;
-      maxHeight = 450;
-      quality = 82;
+      maxWidth = 400;
+      maxHeight = 400;
+      quality = 80;
     }
 
-    // ⚡ معالجة وضغط الصورة باحترافية
+    // ضغط ومعالجة سريعة
     const optimizedBuffer = await sharp(buffer)
-      .rotate() // 🔄 يصحح دوران صور الجوال تلقائياً اعتماداً على مستشعر الكاميرا
+      .rotate() // تصحيح اتجاه صور الجوال
       .resize({
         width: maxWidth,
         height: maxHeight,
@@ -53,7 +75,7 @@ export async function POST(req: NextRequest) {
       })
       .webp({
         quality,
-        effort: 4, // ضغط متقدم يحافظ على نقاء الألوان وتفاصيل الفستق والعسل
+        effort: 3, // توازن مثالي بين سرعة المعالجة وجودة الضغط
         smartSubsample: true,
       })
       .toBuffer();
@@ -61,12 +83,12 @@ export async function POST(req: NextRequest) {
     const fileName = `${target}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.webp`;
     const filePath = `${target}/${fileName}`;
 
-    // 🚀 الرفع مع إعدادات الكاش السحابي الأقصى (1 سنة كاملة)
+    // الرفع لكلاود Supabase مع كاش طويل الأمد
     const { error: uploadError } = await supabase.storage
       .from("store-images")
       .upload(filePath, optimizedBuffer, {
         contentType: "image/webp",
-        cacheControl: "31536000, immutable", // كاش دائم فائق السرعة
+        cacheControl: "31536000, immutable",
         upsert: false,
       });
 
@@ -79,10 +101,11 @@ export async function POST(req: NextRequest) {
     } = supabase.storage.from("store-images").getPublicUrl(filePath);
 
     return NextResponse.json({ url: publicUrl });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "حدث خطأ غير متوقع";
     console.error("Upload & optimize error:", err);
     return NextResponse.json(
-      { error: err.message || "حدث خطأ أثناء معالجة ورفع الصورة" },
+      { error: errorMsg },
       { status: 500 }
     );
   }

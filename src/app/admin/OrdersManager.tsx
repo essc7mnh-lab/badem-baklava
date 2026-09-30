@@ -1,15 +1,46 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { 
-  ShoppingBag, Package, Tag, Printer, X, FileSpreadsheet, Download, 
+  ShoppingBag, Package, Tag, Printer, X, Download, 
   CalendarClock, DollarSign, Phone, MapPin, User, Gift, ExternalLink, 
-  Trash2, Pencil, CheckCircle2, Loader2
+  Trash2, Pencil, CheckCircle2, Loader2, Search, Filter
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 
+export interface OrderItem {
+  id?: string;
+  title?: string;
+  price?: number | string;
+  quantity: number;
+  portion?: string;
+  portionNote?: string;
+  image?: string;
+}
+
+export interface AdminOrder {
+  id: string;
+  customer_name?: string;
+  customer_phone?: string;
+  city?: string;
+  district?: string;
+  street?: string;
+  notes?: string;
+  is_gift?: boolean;
+  recipient_name?: string;
+  gift_message?: string;
+  items?: OrderItem[];
+  subtotal?: number | string;
+  discount_amount?: number | string;
+  delivery_fee?: number | string;
+  total_amount: number | string;
+  payment_method?: string;
+  status?: string;
+  created_at?: string;
+}
+
 interface OrdersManagerProps {
-  orders: any[];
+  orders: AdminOrder[];
   productsCount: number;
   couponsCount: number;
   fetchData: () => Promise<void>;
@@ -21,21 +52,48 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
   couponsCount,
   fetchData,
 }) => {
-  const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<any | null>(null);
-  const [editingOrder, setEditingOrder] = useState<any | null>(null);
+  const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<AdminOrder | null>(null);
+  const [editingOrder, setEditingOrder] = useState<AdminOrder | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [todayFormattedDate, setTodayFormattedDate] = useState<string>("");
 
-  // تهيئة التاريخ الحي تفادياً لمشاكل الـ Hydration في Next.js
+  // حالات البحث والتصفية السريعة
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  // تهيئة التاريخ الحي تفادياً لمشاكل الـ Hydration
   useEffect(() => {
-    const formatted = new Date().toLocaleDateString("ar-SA", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    setTodayFormattedDate(formatted);
+    const timer = setTimeout(() => {
+      const formatted = new Date().toLocaleDateString("ar-SA", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+      setTodayFormattedDate(formatted);
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []);
+
+  // تصفية الطلبات بناءً على البحث وحالة الطلب
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const currentStatus = o.status || "pending";
+      const matchesStatus = statusFilter === "all" || currentStatus === statusFilter;
+      const cleanSearch = searchQuery.toLowerCase().trim();
+
+      const matchesSearch =
+        !cleanSearch ||
+        String(o.id).toLowerCase().includes(cleanSearch) ||
+        (o.customer_name && o.customer_name.toLowerCase().includes(cleanSearch)) ||
+        (o.customer_phone && o.customer_phone.toLowerCase().includes(cleanSearch)) ||
+        (o.city && o.city.toLowerCase().includes(cleanSearch)) ||
+        (o.district && o.district.toLowerCase().includes(cleanSearch));
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [orders, statusFilter, searchQuery]);
 
   // تحديث حالة الطلب السريعة
   const handleUpdateOrderStatus = useCallback(async (orderId: string, status: string) => {
@@ -43,9 +101,10 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
       const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
       if (error) throw error;
       await fetchData();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "فشل التحديث";
       console.error("Failed to update status:", err);
-      alert("تعذر تحديث حالة الطلب: " + err.message);
+      alert("تعذر تحديث حالة الطلب: " + msg);
     }
   }, [fetchData]);
 
@@ -59,8 +118,9 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
       if (error) throw error;
       await fetchData();
       alert("تم حذف الطلب بنجاح ✅");
-    } catch (err: any) {
-      alert("حدث خطأ أثناء الحذف: " + err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "خطأ أثناء الحذف";
+      alert("حدث خطأ أثناء الحذف: " + msg);
     }
   }, [fetchData]);
 
@@ -90,14 +150,15 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
       await fetchData();
       setEditingOrder(null);
       alert("تم تحديث بيانات الطلب بنجاح ✅");
-    } catch (err: any) {
-      alert("حدث خطأ أثناء التحديث: " + err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "خطأ أثناء التحديث";
+      alert("حدث خطأ أثناء التحديث: " + msg);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 📊 تصدير ملف Excel بتنسيق XML/HTML ومن اليمين لليسار
+  // تصدير ملف Excel بتنسيق XML/HTML يدعم العربية RTL
   const exportOrdersToExcel = () => {
     if (orders.length === 0) {
       alert("لا توجد طلبات مسجلة لتصديرها حالياً.");
@@ -187,7 +248,22 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+  const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+
+  // شارة مظهر حالة الطلب
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case "baking":
+        return { label: "🔥 في الفرن والتجهيز", cls: "bg-orange-50 text-orange-800 border-orange-200" };
+      case "delivering":
+        return { label: "🚚 مع المندوب", cls: "bg-blue-50 text-blue-800 border-blue-200" };
+      case "completed":
+        return { label: "✅ مكتمل ومسلم", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+      case "pending":
+      default:
+        return { label: "⏳ قيد الانتظار", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+    }
+  };
 
   return (
     <div className="space-y-6 select-none">
@@ -196,7 +272,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
       <div className="bg-white px-5 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between text-xs font-bold text-stone-700 shadow-2xs">
         <div className="flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-[#C59B27] shrink-0" />
-          <span className="min-h-[1rem]">{todayFormattedDate}</span>
+          <span className="min-h-4">{todayFormattedDate}</span>
         </div>
         <span className="text-[10.5px] bg-emerald-50 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200/60 font-black flex items-center gap-1.5 shadow-2xs">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -206,7 +282,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
       {/* 📊 بطاقات الإحصائيات */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
           <span className="text-[10px] text-stone-400 font-bold block">إجمالي المبيعات</span>
           <div className="flex items-center justify-between gap-1">
             <span className="text-lg md:text-xl font-black text-[#4A0E17] font-mono tracking-tight truncate">
@@ -218,7 +294,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
           <span className="text-[10px] text-stone-400 font-bold block">عدد الطلبات</span>
           <div className="flex items-center justify-between gap-1">
             <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
@@ -230,7 +306,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
           <span className="text-[10px] text-stone-400 font-bold block">الأصناف المعروضة</span>
           <div className="flex items-center justify-between gap-1">
             <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
@@ -242,7 +318,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
           <span className="text-[10px] text-stone-400 font-bold block">الكوبونات النشطة</span>
           <div className="flex items-center justify-between gap-1">
             <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
@@ -255,191 +331,267 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         </div>
       </div>
 
-      {/* صندوق تصدير Excel */}
-      <div className="bg-gradient-to-r from-white via-[#FAF5ED] to-white p-5 rounded-3xl border border-[#C59B27]/30 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-[#4A0E17] text-[#E5C058] flex items-center justify-center shadow-md border border-[#C59B27]/40 shrink-0">
-            <FileSpreadsheet className="w-6 h-6" />
+      {/* 🔍 شريط البحث والتصفية المتقدم وتصدير Excel */}
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-stone-200/80 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          
+          {/* حقل البحث الحي */}
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="ابحث برقم الطلب، اسم العميل، الجوال، المدينة..."
+              className="w-full bg-[#FAF5ED] border border-stone-200 rounded-2xl pr-10 pl-4 py-2.5 text-xs font-bold focus:outline-hidden focus:border-[#4A0E17]"
+            />
+            <Search className="w-4 h-4 text-stone-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 hover:text-stone-600"
+              >
+                مسح
+              </button>
+            )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-[#4A0E17]">سجل المبيعات والعملاء المعتمد</h3>
-              <span className="bg-[#4A0E17]/10 text-[#4A0E17] text-[10px] font-black px-2.5 py-0.5 rounded-full">
-                {orders.length} طلبات
-              </span>
-            </div>
-            <p className="text-[11px] text-stone-500 mt-0.5">
-              تصدير تقرير متكامل بصيغة Excel لحملات الواتساب والتسويق الموسمي.
-            </p>
-          </div>
+
+          {/* زر تصدير Excel */}
+          <button
+            type="button"
+            onClick={exportOrdersToExcel}
+            className="px-5 py-2.5 bg-[#4A0E17] hover:bg-[#36070E] text-white rounded-2xl text-xs font-black shadow-md transition flex items-center justify-center gap-2 border border-[#C59B27]/40 cursor-pointer active:scale-95 shrink-0"
+          >
+            <Download className="w-4 h-4 text-[#E5C058]" />
+            <span>تصدير Excel ({filteredOrders.length})</span>
+          </button>
         </div>
-        
-        <button
-          type="button"
-          onClick={exportOrdersToExcel}
-          className="w-full sm:w-auto px-6 py-3 bg-[#4A0E17] hover:bg-[#36070E] text-white rounded-2xl text-xs font-black shadow-md hover:shadow-lg transition-all transform active:scale-95 flex items-center justify-center gap-2.5 border border-[#C59B27]/40 group cursor-pointer shrink-0"
-        >
-          <Download className="w-4 h-4 text-[#E5C058] group-hover:translate-y-0.5 transition-transform" />
-          <span>تصدير تقرير المبيعات (Excel)</span>
-        </button>
+
+        {/* أزرار فلترة الحالات */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1">
+          <span className="text-[11px] font-bold text-stone-400 flex items-center gap-1 shrink-0">
+            <Filter className="w-3.5 h-3.5" />
+            <span>الحالة:</span>
+          </span>
+          {[
+            { id: "all", label: "الكل" },
+            { id: "pending", label: "⏳ الانتظار" },
+            { id: "baking", label: "🔥 في الفرن" },
+            { id: "delivering", label: "🚚 مع المندوب" },
+            { id: "completed", label: "✅ مكتمل" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setStatusFilter(tab.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer ${
+                statusFilter === tab.id
+                  ? "bg-[#4A0E17] text-white shadow-xs"
+                  : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* 📋 قائمة الطلبات بتصميم ملكي فاخر ومنظم */}
+      {/* 📋 قائمة الطلبات */}
       <div className="space-y-4">
-        {orders.length === 0 ? (
-          <div className="bg-white p-12 text-center rounded-3xl border border-stone-200 text-stone-400 shadow-2xs">
-            <ShoppingBag className="w-12 h-12 mx-auto stroke-[1.5] mb-2 text-stone-300" />
-            <p className="font-bold text-sm text-stone-700">لا توجد طلبات واردة حالياً.</p>
+        {filteredOrders.length === 0 ? (
+          <div className="bg-white p-12 text-center rounded-3xl border border-stone-200 text-stone-400 shadow-2xs space-y-2">
+            <ShoppingBag className="w-12 h-12 mx-auto stroke-[1.5] text-stone-300" />
+            <p className="font-bold text-sm text-stone-700">لا توجد طلبات مطابقة للبحث أو الفلتر المختار.</p>
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}
+                className="text-xs font-bold text-[#4A0E17] underline cursor-pointer"
+              >
+                إعادة ضبط البحث
+              </button>
+            )}
           </div>
         ) : (
-          orders.map((ord) => (
-            <div key={ord.id} className="bg-white rounded-3xl border border-stone-200/90 shadow-2xs overflow-hidden transition hover:border-[#4A0E17]/30">
-              
-              {/* رأس البطاقة (رقم الطلب + الحالة + الأزرار) */}
-              <div className="bg-[#FAF5ED] px-6 py-4 border-b border-stone-200/60 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-mono text-sm font-black text-[#4A0E17] bg-white px-3 py-1 rounded-xl border border-stone-200 shadow-2xs">
-                    #{ord.id}
-                  </span>
-                  {ord.is_gift && (
-                    <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-1 rounded-full border border-amber-300/50">
-                      <Gift className="w-3 h-3 text-amber-700" />
-                      <span>طلب إهداء ملكي</span>
+          filteredOrders.map((ord) => {
+            const badge = getStatusBadge(ord.status);
+
+            return (
+              <div key={ord.id} className="bg-white rounded-3xl border border-stone-200/90 shadow-2xs overflow-hidden transition hover:border-[#4A0E17]/30">
+                
+                {/* رأس البطاقة */}
+                <div className="bg-[#FAF5ED] px-5 sm:px-6 py-4 border-b border-stone-200/60 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-mono text-sm font-black text-[#4A0E17] bg-white px-3 py-1 rounded-xl border border-stone-200 shadow-2xs">
+                      #{ord.id}
                     </span>
-                  )}
-                  <span className="text-[11px] text-stone-400 font-medium">
-                    {ord.created_at ? new Date(ord.created_at).toLocaleString("ar-SA") : ""}
-                  </span>
-                </div>
 
-                <div className="flex items-center flex-wrap gap-2">
-                  {/* زر تعديل الطلب */}
-                  <button
-                    type="button"
-                    onClick={() => setEditingOrder({ ...ord })}
-                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
-                    title="تعديل بيانات الطلب"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-blue-600" />
-                    <span>تعديل</span>
-                  </button>
+                    {/* شارة الحالة البصرية */}
+                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs ${badge.cls}`}>
+                      {badge.label}
+                    </span>
 
-                  {/* زر طباعة الفاتورة */}
-                  <button 
-                    type="button"
-                    onClick={() => setSelectedOrderForPrint(ord)} 
-                    className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold flex items-center gap-1.5 text-stone-700 shadow-2xs cursor-pointer transition active:scale-95"
-                  >
-                    <Printer className="w-3.5 h-3.5 text-[#C59B27]" />
-                    <span>طباعة الفاتورة</span>
-                  </button>
-
-                  {/* زر حذف الطلب */}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteOrder(ord.id)}
-                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
-                    title="حذف الطلب نهائياً"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                    <span>حذف</span>
-                  </button>
-
-                  {/* قائمة تغيير الحالة */}
-                  <select
-                    value={ord.status || "pending"}
-                    onChange={(e) => handleUpdateOrderStatus(ord.id, e.target.value)}
-                    className="bg-white border border-stone-200 rounded-xl px-3 py-1.5 text-xs font-bold text-stone-800 focus:outline-hidden shadow-2xs cursor-pointer"
-                  >
-                    <option value="pending">⏳ قيد الانتظار</option>
-                    <option value="baking">🔥 في الفرن والتجهيز</option>
-                    <option value="delivering">🚚 مع المندوب</option>
-                    <option value="completed">✅ مكتمل ومسلم</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* جسم البطاقة */}
-              <div className="p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#FAF5ED]/50 p-4 rounded-2xl border border-stone-200/40 text-xs">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-stone-800 font-bold">
-                      <User className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
-                      <span>{ord.customer_name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-stone-600 font-medium">
-                      <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <a href={`tel:${ord.customer_phone}`} dir="ltr" className="hover:underline font-mono">
-                        {ord.customer_phone}
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5 md:border-r md:border-stone-200 md:pr-3">
-                    <div className="flex items-start gap-2 text-stone-800 font-bold">
-                      <MapPin className="w-3.5 h-3.5 text-[#4A0E17] shrink-0 mt-0.5" />
-                      <span>{ord.city}، {ord.district} {ord.street ? `- ${ord.street}` : ""}</span>
-                    </div>
-                    {ord.notes && ord.notes.includes("https://") && (
-                      <div>
-                        {ord.notes.split(" ").map((word: string, i: number) => 
-                          word.startsWith("https://") ? (
-                            <a key={i} href={word} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200 mt-1 hover:underline">
-                              <span>📍 فتح موقع العميل (GPS)</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          ) : null
-                        )}
-                      </div>
+                    {ord.is_gift && (
+                      <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-300/50">
+                        <Gift className="w-3 h-3 text-amber-700" />
+                        <span>طلب إهداء ملكي</span>
+                      </span>
                     )}
+
+                    <span className="text-[11px] text-stone-400 font-medium">
+                      {ord.created_at ? new Date(ord.created_at).toLocaleString("ar-SA") : ""}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center flex-wrap gap-2">
+                    {/* زر تعديل الطلب */}
+                    <button
+                      type="button"
+                      onClick={() => setEditingOrder({ ...ord })}
+                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
+                      title="تعديل بيانات الطلب"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                      <span>تعديل</span>
+                    </button>
+
+                    {/* زر طباعة الفاتورة */}
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedOrderForPrint(ord)} 
+                      className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold flex items-center gap-1.5 text-stone-700 shadow-2xs cursor-pointer transition active:scale-95"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>طباعة</span>
+                    </button>
+
+                    {/* زر حذف الطلب */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteOrder(ord.id)}
+                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
+                      title="حذف الطلب نهائياً"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      <span>حذف</span>
+                    </button>
+
+                    {/* قائمة تغيير الحالة اللحظية */}
+                    <select
+                      value={ord.status || "pending"}
+                      onChange={(e) => handleUpdateOrderStatus(ord.id, e.target.value)}
+                      className="bg-white border border-stone-200 rounded-xl px-3 py-1.5 text-xs font-bold text-stone-800 focus:outline-hidden shadow-2xs cursor-pointer"
+                    >
+                      <option value="pending">⏳ قيد الانتظار</option>
+                      <option value="baking">🔥 في الفرن والتجهيز</option>
+                      <option value="delivering">🚚 مع المندوب</option>
+                      <option value="completed">✅ مكتمل ومسلم</option>
+                    </select>
                   </div>
                 </div>
 
-                {/* تفاصيل قائمة المنتجات */}
-                <div className="space-y-2">
-                  <span className="text-[11px] font-black text-stone-400 uppercase tracking-wider block">المنتجات المطلوبة:</span>
-                  <div className="divide-y divide-stone-100 border border-stone-200/60 rounded-2xl overflow-hidden bg-white">
-                    {Array.isArray(ord.items) && ord.items.map((it: any, idx: number) => (
-                      <div key={idx} className="p-3 flex items-center justify-between text-xs hover:bg-[#FAF5ED]/30 transition">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-6 h-6 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] font-black flex items-center justify-center text-[11px] font-mono shrink-0">
-                            {it.quantity}
-                          </span>
-                          <div>
-                            <span className="font-bold text-stone-800 block">{it.title}</span>
-                            <span className="text-[10px] text-stone-400">{it.portion || it.portionNote || "الحجم القياسي الملكي"}</span>
-                          </div>
-                        </div>
-                        <span className="font-black text-[#4A0E17] font-mono">
-                          {(Number(it.price) * it.quantity).toFixed(2)} ر.س
-                        </span>
+                {/* جسم البطاقة */}
+                <div className="p-5 sm:p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#FAF5ED]/50 p-4 rounded-2xl border border-stone-200/40 text-xs">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-stone-800 font-bold">
+                        <User className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                        <span>{ord.customer_name}</span>
                       </div>
-                    ))}
+                      <div className="flex items-center gap-2 text-stone-600 font-medium">
+                        <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <a href={`tel:${ord.customer_phone}`} dir="ltr" className="hover:underline font-mono">
+                          {ord.customer_phone}
+                        </a>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 md:border-r md:border-stone-200 md:pr-3">
+                      <div className="flex items-start gap-2 text-stone-800 font-bold">
+                        <MapPin className="w-3.5 h-3.5 text-[#4A0E17] shrink-0 mt-0.5" />
+                        <span>{ord.city}، {ord.district} {ord.street ? `- ${ord.street}` : ""}</span>
+                      </div>
+                      {ord.notes && ord.notes.includes("https://") && (
+                        <div>
+                          {ord.notes.split(" ").map((word, i) => 
+                            word.startsWith("https://") ? (
+                              <a key={i} href={word} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200 mt-1 hover:underline">
+                                <span>📍 فتح موقع العميل (GPS)</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : null
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* تفاصيل بطاقة الإهداء الملكية إذا وجدت */}
+                  {ord.is_gift && (ord.recipient_name || ord.gift_message) && (
+                    <div className="bg-amber-50/90 border border-amber-200/80 p-3.5 rounded-2xl text-xs space-y-1.5">
+                      <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                        <Gift className="w-4 h-4 text-amber-700" />
+                        <span>بيانات كرت الإهداء الملكي:</span>
+                      </span>
+                      {ord.recipient_name && (
+                        <p className="text-stone-700"><strong>اسم المُهدى إليه:</strong> {ord.recipient_name}</p>
+                      )}
+                      {ord.gift_message && (
+                       <p className="text-stone-700 bg-white/70 p-2.5 rounded-xl border border-amber-200/50 italic font-serif">
+  &ldquo;{ord.gift_message}&rdquo;
+</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* تفاصيل قائمة المنتجات المطلوبة */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-black text-stone-400 uppercase tracking-wider block">المنتجات المطلوبة:</span>
+                    <div className="divide-y divide-stone-100 border border-stone-200/60 rounded-2xl overflow-hidden bg-white">
+                      {Array.isArray(ord.items) && ord.items.map((it, idx) => (
+                        <div key={idx} className="p-3 flex items-center justify-between text-xs hover:bg-[#FAF5ED]/30 transition">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-6 h-6 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] font-black flex items-center justify-center text-[11px] font-mono shrink-0">
+                              {it.quantity}
+                            </span>
+                            <div>
+                              <span className="font-bold text-stone-800 block">{it.title}</span>
+                              <span className="text-[10px] text-stone-400">{it.portion || it.portionNote || "الحجم القياسي الملكي"}</span>
+                            </div>
+                          </div>
+                          <span className="font-black text-[#4A0E17] font-mono">
+                            {(Number(it.price || 0) * it.quantity).toFixed(2)} ر.س
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ملاحظات العميل العادية */}
+                  {ord.notes && !ord.notes.includes("https://") && (
+                    <div className="text-xs bg-amber-50/80 p-3 rounded-2xl border border-amber-200/60 text-amber-900 flex items-start gap-2">
+                      <span className="font-bold shrink-0">ملاحظات العميل:</span>
+                      <span className="flex-1">{ord.notes}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ذيل البطاقة */}
+                <div className="bg-[#FAF5ED]/80 px-6 py-4 border-t border-stone-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <span className="text-stone-500 font-medium">
+                    طريقة الدفع: <strong className="text-stone-800 uppercase font-mono">{ord.payment_method || "عند الاستلام"}</strong>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-stone-500">المبلغ الإجمالي:</span>
+                    <span className="text-base font-black text-[#4A0E17] font-mono">
+                      {Number(ord.total_amount || 0).toFixed(2)} ر.س
+                    </span>
                   </div>
                 </div>
 
-                {/* ملاحظات إضافية */}
-                {ord.notes && !ord.notes.includes("https://") && (
-                  <div className="text-xs bg-amber-50/80 p-3 rounded-2xl border border-amber-200/60 text-amber-900 flex items-start gap-2">
-                    <span className="font-bold shrink-0">ملاحظات العميل:</span>
-                    <span className="flex-1">{ord.notes}</span>
-                  </div>
-                )}
               </div>
-
-              {/* ذيل البطاقة */}
-              <div className="bg-[#FAF5ED]/80 px-6 py-4 border-t border-stone-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <span className="text-stone-500 font-medium">
-                  طريقة الدفع: <strong className="text-stone-800 uppercase font-mono">{ord.payment_method}</strong>
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-stone-500">المبلغ الإجمالي:</span>
-                  <span className="text-base font-black text-[#4A0E17] font-mono">{parseFloat(ord.total_amount).toFixed(2)} ر.س</span>
-                </div>
-              </div>
-
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -455,7 +607,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
               </div>
               <button 
                 type="button"
-                onClick={() => setEditingOrder(null)}
+                onClick={() => setEditingOrder(null)} 
                 className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center hover:bg-stone-200 cursor-pointer transition active:scale-90"
               >
                 <X className="w-4 h-4" />
@@ -581,8 +733,8 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
       {/* 🖨️ نافذة طباعة الفاتورة الفاخرة */}
       {selectedOrderForPrint && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl border border-[#4A0E17]/20 space-y-6 text-[#2D2321] relative max-h-[90vh] overflow-y-auto overscroll-contain">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl border border-[#4A0E17]/20 space-y-6 text-[#2D2321] relative max-h-[90vh] overflow-y-auto print:max-h-none print:shadow-none print:border-none print:p-6 print:w-full">
             
             <button 
               type="button"
@@ -615,10 +767,10 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 <span>المبلغ</span>
               </div>
               <div className="space-y-2 text-xs divide-y divide-stone-100">
-                {Array.isArray(selectedOrderForPrint.items) && selectedOrderForPrint.items.map((it: any, i: number) => (
+                {Array.isArray(selectedOrderForPrint.items) && selectedOrderForPrint.items.map((it, i) => (
                   <div key={i} className="flex justify-between items-center pt-2">
                     <span className="font-medium text-stone-800">{it.quantity}× {it.title} ({it.portion || it.portionNote || "قياسي"})</span>
-                    <span className="font-bold font-mono text-[#4A0E17]">{(Number(it.price) * it.quantity).toFixed(2)} ر.س</span>
+                    <span className="font-bold font-mono text-[#4A0E17]">{(Number(it.price || 0) * it.quantity).toFixed(2)} ر.س</span>
                   </div>
                 ))}
               </div>
@@ -637,7 +789,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
               )}
               <div className="flex justify-between items-center text-base font-black text-[#4A0E17] pt-2 border-t border-stone-200">
                 <span>المبلغ الإجمالي المدفوع:</span>
-                <span className="font-mono">{parseFloat(selectedOrderForPrint.total_amount).toFixed(2)} ر.س</span>
+                <span className="font-mono">{Number(selectedOrderForPrint.total_amount || 0).toFixed(2)} ر.س</span>
               </div>
             </div>
 

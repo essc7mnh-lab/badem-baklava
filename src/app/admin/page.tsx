@@ -4,16 +4,13 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import { 
   Plus, Trash2, Edit3, Package, Tag, Image as ImageIcon, 
-  ShoppingBag, Layers, RefreshCw, Lock, KeyRound, LogOut, 
+  ShoppingBag, Layers, RefreshCw, LogOut, 
   Upload, Volume2, Loader2, Sparkles, Coins, Wand2, 
-  Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal, User, AlertTriangle,
-  PackagePlus,
-  MessageSquare,
-  Eye,
-  EyeOff
+  Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal,
+  PackagePlus, MessageSquare, Eye, EyeOff, Lock, User, KeyRound, AlertTriangle
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
-import { OrdersManager } from "./OrdersManager";
+import { OrdersManager, type AdminOrder } from "./OrdersManager";
 import { BoxBuilderSettings } from "./BoxBuilderSettings";
 import { ReviewsManager } from "./ReviewsManager";
 
@@ -74,18 +71,6 @@ export interface LoyaltyRewardItem {
   title_en: string;
   discount_percent: number;
   points_required: number;
-}
-
-export interface AdminOrderRow {
-  id: string;
-  customer_name?: string;
-  customer_phone?: string;
-  total_amount?: number | string;
-  subtotal?: number | string;
-  status?: string;
-  created_at?: string;
-  items?: unknown[];
-  [key: string]: unknown;
 }
 
 type AdminTab = "orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings" | "reviews";
@@ -184,8 +169,10 @@ const QUICK_INGREDIENT_ICONS = ["🥜", "🧈", "🍯", "🌰", "🥛", "🌾", 
 // =========================================================================
 
 export default function AdminDashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+
+  // حقول تسجيل الدخول الآمن
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -201,7 +188,7 @@ export default function AdminDashboard() {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [banners, setBanners] = useState<BannerItem[]>([]);
   const [coupons, setCoupons] = useState<CouponItem[]>([]);
-  const [orders, setOrders] = useState<AdminOrderRow[]>([]);
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loyaltyRewards, setLoyaltyRewards] = useState<LoyaltyRewardItem[]>([]);
   const [pointsPerSar, setPointsPerSar] = useState<number>(10);
 
@@ -223,7 +210,7 @@ export default function AdminDashboard() {
 
   // إدارة البانرات
   const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
-  const [newBanner, setNewBanner] = useState({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" ,target_category_slug: "" });
+  const [newBanner, setNewBanner] = useState({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "", target_category_slug: "" });
 
   // إدارة الكوبونات
   const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
@@ -242,75 +229,44 @@ export default function AdminDashboard() {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // التحقق من الجلسة المحفوظة دون تعليق الـ Hydration
   useEffect(() => {
     const authTimer = setTimeout(() => {
-      if (typeof window !== "undefined" && sessionStorage.getItem("badem_admin_auth") === "true") {
-        setIsAuthenticated(true);
-      }
+      const savedAuth = typeof window !== "undefined" && sessionStorage.getItem("badem_admin_auth") === "true";
+      setIsAuthenticated(savedAuth);
+      setIsCheckingAuth(false);
     }, 0);
 
     return () => clearTimeout(authTimer);
   }, []);
 
+  // دالة تسجيل الدخول الآمنة عبر الـ API
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
     setIsLoggingIn(true);
 
     try {
-      const cleanUser = usernameInput.trim();
-      const cleanPass = passwordInput.trim();
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: usernameInput.trim(),
+          password: passwordInput.trim(),
+        }),
+      });
 
-      if (!cleanUser || !cleanPass) {
-        setLoginError("يرجى إدخال اسم المستخدم وكلمة المرور.");
-        setIsLoggingIn(false);
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setLoginError(data.error || "اسم المستخدم أو كلمة المرور غير صحيحة");
         return;
       }
 
-      const lockDataStr = localStorage.getItem(`badem_lock_${cleanUser}`);
-      if (lockDataStr) {
-        const lockData = JSON.parse(lockDataStr);
-        const now = new Date().getTime();
-        if (now < lockData.lockUntil) {
-          const remainingMinutes = Math.ceil((lockData.lockUntil - now) / (1000 * 60));
-          setLoginError(`⚠️ تم إيقاف هذا الحساب مؤقتاً بسبب المحاولات الفاشلة. يرجى المحاولة بعد ${remainingMinutes} دقيقة.`);
-          setIsLoggingIn(false);
-          return;
-        } else {
-          localStorage.removeItem(`badem_lock_${cleanUser}`);
-          localStorage.removeItem(`badem_fails_${cleanUser}`);
-        }
-      }
-
-      const { data: adminData, error } = await supabase
-        .from("admins")
-        .select("*")
-        .eq("username", cleanUser)
-        .maybeSingle();
-
-      if (error || !adminData || adminData.pin_code !== cleanPass) {
-        const failsKey = `badem_fails_${cleanUser}`;
-        const currentFails = Number(localStorage.getItem(failsKey) || 0) + 1;
-        localStorage.setItem(failsKey, String(currentFails));
-
-        if (currentFails >= 3) {
-          const lockUntil = new Date().getTime() + 60 * 60 * 1000;
-          localStorage.setItem(`badem_lock_${cleanUser}`, JSON.stringify({ lockUntil }));
-          setLoginError("🚨 تم إدخال كلمة المرور خاطئة 3 مرات متتالية! تم إيقاف الحساب مؤقتاً لمدة ساعة كاملة للأمان.");
-        } else {
-          setLoginError(`❌ اسم المستخدم أو كلمة المرور غير صحيحة. (محاولة ${currentFails} من 3)`);
-        }
-        setIsLoggingIn(false);
-        return;
-      }
-
-      localStorage.removeItem(`badem_fails_${cleanUser}`);
-      localStorage.removeItem(`badem_lock_${cleanUser}`);
-      setIsAuthenticated(true);
       sessionStorage.setItem("badem_admin_auth", "true");
-    } catch (err) {
-      console.error("Login error:", err);
-      setLoginError("حدث خطأ أثناء الاتصال بقاعدة البيانات.");
+      setIsAuthenticated(true);
+    } catch {
+      setLoginError("تعذر الاتصال بسيرفر التحقق، يرجى المحاولة لاحقاً.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -374,7 +330,7 @@ export default function AdminDashboard() {
       if (prodRes.data) setProducts(prodRes.data as ProductItem[]);
       if (banRes.data) setBanners(banRes.data as BannerItem[]);
       if (coupRes.data) setCoupons(coupRes.data as CouponItem[]);
-      if (ordRes.data) setOrders(ordRes.data as AdminOrderRow[]);
+      if (ordRes.data) setOrders(ordRes.data as AdminOrder[]);
       if (loyRes.data) setLoyaltyRewards(loyRes.data as LoyaltyRewardItem[]);
       if (setRes.data?.points_per_sar) setPointsPerSar(Number(setRes.data.points_per_sar));
     } catch (e) {
@@ -394,7 +350,7 @@ export default function AdminDashboard() {
     const channel = supabase
       .channel("realtime-admin-orders")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, (payload) => {
-        setOrders((prev) => [payload.new as AdminOrderRow, ...prev]);
+        setOrders((prev) => [payload.new as AdminOrder, ...prev]);
         playLuxuryOrderAlert();
       })
       .subscribe();
@@ -451,7 +407,6 @@ export default function AdminDashboard() {
     }));
   };
 
-  // رفع الصور وتوزيعها (مع دعم المعرض المتعدد للمنتجات)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: "category" | "product" | "banner") => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -478,7 +433,6 @@ export default function AdminDashboard() {
         } else if (target === "banner") {
           setNewBanner((prev) => ({ ...prev, image_url: data.url }));
         } else if (target === "product") {
-          // إضافة الصورة إلى مصفوفة صور المنتج وتحديث الصورة الرئيسية
           setProductImages((prev) => [...prev, data.url]);
           setNewProd((prev) => ({
             ...prev,
@@ -530,7 +484,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // حفظ الصنف مع الصور المتعددة وحالة التوفر
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     const primaryImg = productImages[0] || newProd.image_url.trim();
@@ -584,11 +537,9 @@ export default function AdminDashboard() {
     }
   };
 
-  // تبديل فوري لحالة توفر الصنف بضغطة زر واحدة من القائمة
   const handleQuickToggleAvailability = async (product: ProductItem) => {
     const nextStatus = !(product.is_available ?? true);
 
-    // تحديث فوري وسريع للواجهة
     setProducts((prev) =>
       prev.map((p) => (p.id === product.id ? { ...p, is_available: nextStatus } : p))
     );
@@ -609,7 +560,7 @@ export default function AdminDashboard() {
 
   const handleSaveBanner = async (e: React.FormEvent) => {
     e.preventDefault();
-if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان أولاً");
+    if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان أولاً");
     setIsSubmitting(true);
     try {
       const payload = {
@@ -633,7 +584,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
       }
 
       setEditingBannerId(null);
-      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" ,target_category_slug: "" });
+      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "", target_category_slug: "" });
       await fetchData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
@@ -769,6 +720,16 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
     }
   };
 
+  // شاشة الانتظار الخفيفة أثناء التحقق من الجلسة
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-[#FAF5ED] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#4A0E17]" />
+      </div>
+    );
+  }
+
+  // إذا لم يكن مسجل الدخول، تظهر شاشة الدخول الملكية مباشرة في نفس صفحة /admin دون أي تحويل خارجي
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF5ED] flex items-center justify-center p-4">
@@ -776,9 +737,12 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
           <div className="w-16 h-16 bg-[#4A0E17] text-[#E5C058] rounded-3xl mx-auto flex items-center justify-center shadow-lg border border-[#C59B27]/40">
             <Lock className="w-8 h-8" />
           </div>
+
           <div>
-            <span className="text-[10px] tracking-widest text-[#C59B27] font-black uppercase font-brand">BADEM SECURE ADMIN</span>
-            <h2 className="text-xl font-black text-[#4A0E17] mt-1">لوحة إدارة المتجر</h2>
+            <span className="text-[10px] tracking-widest text-[#C59B27] font-black uppercase font-brand">
+              BADEM SECURE ACCESS
+            </span>
+            <h2 className="text-xl font-black text-[#4A0E17] mt-1">لوحة تحكم إدارة المتجر</h2>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-4 text-right">
@@ -791,7 +755,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                   value={usernameInput}
                   autoFocus
                   onChange={(e) => setUsernameInput(e.target.value)}
-                  placeholder="admin"
+                  placeholder="اسم المستخدم"
                   className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold focus:outline-hidden focus:border-[#4A0E17]"
                 />
                 <User className="w-4 h-4 text-stone-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -825,7 +789,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
               disabled={isLoggingIn}
               className="w-full bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white font-black py-3.5 rounded-2xl text-xs shadow-lg cursor-pointer flex items-center justify-center gap-2 transition"
             >
-              {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>تسجيل الدخول الآمن</span>}
+              {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>تسجيل الدخول للوحة الإدارة</span>}
             </button>
           </form>
         </div>
@@ -833,6 +797,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
     );
   }
 
+  // عند التحقق بنجاح، تفتح لوحة التحكم كاملة
   return (
     <div className="min-h-screen bg-[#FAF5ED] text-[#2D2321] p-4 md:p-8 font-sans pb-24">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -864,8 +829,8 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
             <button
               type="button"
               onClick={() => {
-                setIsAuthenticated(false);
                 sessionStorage.removeItem("badem_admin_auth");
+                setIsAuthenticated(false);
               }}
               className="flex items-center gap-1.5 bg-rose-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer hover:bg-rose-700 active:scale-95 transition"
             >
@@ -1076,7 +1041,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
           </div>
         )}
 
-        {/* 3️⃣ تبويب إدارة المنتجات (مع دعم الصور المتعددة وحالة التوفر) */}
+        {/* 3️⃣ تبويب إدارة المنتجات */}
         {activeTab === "products" && (
           <div className="space-y-6">
             <form onSubmit={handleSaveProduct} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
@@ -1169,7 +1134,6 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                   />
                 </div>
 
-                {/* 🌟 مفتاح حالة التوفر ونفاد الكمية */}
                 <div className="flex items-center justify-between p-2.5 bg-[#FAF5ED] border border-stone-200 rounded-xl">
                   <div>
                     <span className="font-bold block text-stone-800">حالة التوفر:</span>
@@ -1188,7 +1152,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                 </div>
               </div>
 
-              {/* 🌟 قسم معرض صور المنتج المتعددة */}
+              {/* معرض صور المنتج المتعددة */}
               <div className="bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-1.5 text-xs font-black text-[#4A0E17]">
@@ -1236,7 +1200,6 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                   </div>
                 </div>
 
-                {/* استعراض وحذف صور المعرض */}
                 {productImages.length > 0 && (
                   <div className="flex flex-wrap gap-2.5 pt-2 border-t border-stone-200/60">
                     {productImages.map((imgUrl, idx) => (
@@ -1379,7 +1342,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
               </button>
             </form>
 
-            {/* قائمة عرض المنتجات مع مفتاح التبديل السريع الفوري */}
+            {/* قائمة عرض المنتجات */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {products.map((p) => {
                 const isAvail = p.is_available ?? true;
@@ -1439,7 +1402,6 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                       </div>
                     </div>
 
-                    {/* زر التبديل السريع الفوري بين متوفر ونفدت الكمية */}
                     <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
                       <span className="text-[10px] text-stone-400 font-bold">حالة الطلب:</span>
                       <button
@@ -1503,16 +1465,14 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div>
-                 <div>
-  <label className="block font-bold mb-1">العنوان بالعربي (اختياري):</label>
-  <textarea
-    rows={2}
-    placeholder={"سارما ملكية\nفستق عنتاب خالص (اتركه فارغاً إذا كان التصميم جاهزاً)"}
-    value={newBanner.title_ar}
-    onChange={(e) => handleBannerTitleArChange(e.target.value)}
-    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs font-bold resize-none"
-  />
-</div>
+                  <label className="block font-bold mb-1">العنوان بالعربي (اختياري):</label>
+                  <textarea
+                    rows={2}
+                    placeholder={"سارما ملكية\nفستق عنتاب خالص"}
+                    value={newBanner.title_ar}
+                    onChange={(e) => handleBannerTitleArChange(e.target.value)}
+                    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs font-bold resize-none"
+                  />
                 </div>
 
                 <div>
@@ -1553,26 +1513,24 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs"
                   />
                 </div>
+
                 <div className="md:col-span-2">
-  <label className="block font-bold mb-1 text-xs text-stone-700">
-    🔗 توجيه العميل عند النقر على هذا الإعلان (اختياري):
-  </label>
-  <select
-    value={newBanner.target_category_slug}
-    onChange={(e) => setNewBanner({ ...newBanner, target_category_slug: e.target.value })}
-    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-bold text-xs cursor-pointer focus:outline-hidden focus:border-[#4A0E17]"
-  >
-    <option value="">بدون توجيه (عرض الصفحة الرئيسية فقط)</option>
-    {categories.map((cat) => (
-      <option key={cat.id} value={cat.slug}>
-        الانتقال فوراً لقسم: {cat.name_ar} ({cat.slug})
-      </option>
-    ))}
-  </select>
-  <p className="text-[10px] text-stone-400 mt-1">
-    * عند نقر العميل على البانر، سيتم نقله تلقائياً إلى هذا القسم وعرض منتجاته بسلاسة.
-  </p>
-</div>
+                  <label className="block font-bold mb-1 text-xs text-stone-700">
+                    🔗 توجيه العميل عند النقر على هذا الإعلان (اختياري):
+                  </label>
+                  <select
+                    value={newBanner.target_category_slug || ""}
+                    onChange={(e) => setNewBanner({ ...newBanner, target_category_slug: e.target.value })}
+                    className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-bold text-xs cursor-pointer focus:outline-hidden focus:border-[#4A0E17]"
+                  >
+                    <option value="">بدون توجيه (عرض الصفحة الرئيسية فقط)</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.slug}>
+                        الانتقال فوراً لقسم: {cat.name_ar} ({cat.slug})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 <div className="md:col-span-2 space-y-1">
                   <label className="block font-bold mb-1">صورة العرض *:</label>
@@ -1792,7 +1750,7 @@ if (!newBanner.image_url) return alert("يرجى رفع صورة الإعلان 
                   </div>
                   <input
                     type="checkbox"
-                    checked={newCoupon.one_per_customer}
+                    checked={newCoupon.one_per_customer || false}
                     onChange={(e) => setNewCoupon({ ...newCoupon, one_per_customer: e.target.checked })}
                     className="w-5 h-5 accent-[#4A0E17] rounded-md cursor-pointer"
                   />
