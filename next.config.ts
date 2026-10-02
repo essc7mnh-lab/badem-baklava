@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
       },
 
     ],
-   qualities: [75, 80, 85, 90, 92], // 👈 ينهي تنبيهات Terminal ويسرع التحميل فورا
+   qualities: [75, 80, 85, 90, 92,70], // 👈 ينهي تنبيهات Terminal ويسرع التحميل فورا
   },
 };
 

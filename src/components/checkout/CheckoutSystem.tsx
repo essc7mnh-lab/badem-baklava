@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useId ,useMemo} from "react";
+import React, { useState, useEffect, useId, useMemo } from "react";
 import Image from "next/image";
 import {
   X,
@@ -41,8 +41,9 @@ const BANK_DETAILS = {
   accountName: "مؤسسة رواد اللذه للحلويات",
   accountNumber: "114000010006086241062",
   iban: "SA5980000114608016241062",
-  qrImage: "/alrajhi-qr.png", // 👈 تأكد من وجود ملف alrajhi-qr.png داخل مجلد public
+  qrImage: "/alrajhi-qr.png", // تأكد من وجود ملف alrajhi-qr.png داخل مجلد public
 };
+
 const SAUDI_CITIES = [
   // 🌟 المدن الرئيسية (الأكثر طلباً)
   "الرياض",
@@ -157,6 +158,8 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [phone, setPhone] = useState(userPhone || "");
   const [city, setCity] = useState("الرياض");
   const [district, setDistrict] = useState("");
+  const [street, setStreet] = useState("");
+  const [notes, setNotes] = useState("");
 
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
 
@@ -168,14 +171,10 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     );
   }, [city]);
 
-
   // فحص صارم: هل المدينة المدخلة موجودة فعلياً في قائمة مدن المملكة الرسمية؟
   const isCityValid = useMemo(() => {
     return SAUDI_CITIES.includes(city.trim());
   }, [city]);
-
-  const [street, setStreet] = useState("");
-  const [notes, setNotes] = useState("");
 
   // حالات تحديد الموقع بالـ GPS
   const [isLocating, setIsLocating] = useState(false);
@@ -198,8 +197,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [backupWhatsAppUrl, setBackupWhatsAppUrl] = useState<string | null>(null);
   const etaMinutes = deliveryMode === "delivery" ? 40 : 20;
 
-  // مزامنة بيانات المستخدم المسجلة تلقائياً
- // مزامنة بيانات المستخدم المسجلة تلقائياً بدون تعليق تصيير الواجهة
+  // مزامنة بيانات المستخدم المسجلة تلقائياً بدون تعليق تصيير الواجهة
   useEffect(() => {
     const timer = setTimeout(() => {
       if (userName && !customerName) setCustomerName(userName);
@@ -208,6 +206,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
     return () => clearTimeout(timer);
   }, [userName, userPhone, customerName, phone]);
+
   // محاكاة مراحل تحضير الطلب في شاشة التتبع
   useEffect(() => {
     if (currentStep === "tracking") {
@@ -345,14 +344,27 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // 🔒 التحقق الإلزامي من بيانات العميل
     if (!customerName.trim() || !phone.trim()) {
       alert(isAr ? "يرجى إدخال اسم العميل ورقم الجوال." : "Please enter your name and phone number.");
       return;
     }
 
-    if (deliveryMode === "delivery" && !district.trim()) {
-      alert(isAr ? "يرجى تحديد الحي للتوصيل بدقة." : "Please enter your district.");
-      return;
+    // 🔒 التحقق الإلزامي والأمني الصارم من العنوان في حال التوصيل
+    if (deliveryMode === "delivery") {
+      if (!isCityValid) {
+        alert(isAr ? "عذراً، يرجى اختيار مدينة صحيحة ومعتمدة من القائمة لإتمام التوصيل." : "Please select a valid city from the list.");
+        return;
+      }
+      if (!district.trim() || district.trim().length < 2) {
+        alert(isAr ? "يرجى كتابة اسم الحي السكني بدقة." : "Please enter your district.");
+        return;
+      }
+      // 👈 إلزام إدخال الشارع وتفاصيل المنزل
+      if (!street.trim() || street.trim().length < 3) {
+        alert(isAr ? "يرجى إدخال اسم الشارع وتفاصيل المنزل (أو رقم الفيلا) بدقة لإتمام التوصيل." : "Please enter your street and house details.");
+        return;
+      }
     }
 
     setUserName(customerName.trim());
@@ -400,7 +412,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
     const deliveryModeText =
       deliveryMode === "delivery"
-        ? `🚚 *نوع الاستلام:* توصيل إلى العنوان (رسوم التوصيل: 35.00 ر.س)\n• *المدينة:* ${city}\n• *الحي:* ${district}\n• *العنوان:* ${street || "محدد بالموقع"}${mapsLink ? `\n📍 *رابط خرائط GPS للمندوب:*\n${mapsLink}` : ""}`
+        ? `🚚 *نوع الاستلام:* توصيل إلى العنوان (رسوم التوصيل: 35.00 ر.س)\n• *المدينة:* ${city}\n• *الحي:* ${district}\n• *الشارع وتفاصيل المنزل:* ${street}${mapsLink ? `\n📍 *رابط خرائط GPS للمندوب:*\n${mapsLink}` : ""}`
         : `🏪 *نوع الاستلام:* استلام شخصي من الفرع (مجاناً - 0.00 ر.س)\n• *الفرع:* فرع بادَم للحلويات الفاخرة`;
 
     const giftText = isGift
@@ -449,6 +461,11 @@ ${payMethodTitle}
       }
       if (!district.trim() || district.trim().length < 2) {
         alert(isAr ? "يرجى كتابة اسم الحي السكني بشكل صحيح." : "Please enter a valid district name.");
+        return;
+      }
+      // 👈 فحص إلزامي لمنع إرسال طلب بدون شارع
+      if (!street.trim() || street.trim().length < 3) {
+        alert(isAr ? "يرجى إدخال الشارع وتفاصيل المنزل لإتمام التوصيل." : "Please enter street and house details.");
         return;
       }
     }
@@ -709,7 +726,7 @@ ${payMethodTitle}
               {/* 🌟 1. مفتاح الاختيار: توصيل للموقع أو استلام من الفرع */}
               <div className="bg-white p-3.5 sm:p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-2.5">
                 <span className="block text-[11px] font-black text-[#4A0E17]">
-                  {isAr ? "اختر طريقة استلام الطلب الملكي:" : "Select Fulfillment Method:"}
+                  {isAr ? "اختر طريقة استلام الطلب:" : "Select Fulfillment Method:"}
                 </span>
 
                 <div className="grid grid-cols-2 gap-2.5">
@@ -784,7 +801,7 @@ ${payMethodTitle}
                       required
                       value={customerName}
                       onChange={(e) => { setCustomerName(e.target.value); setCouponWarning(null); }}
-                      placeholder="مثال: عبدالمجيد السبيعي"
+                      placeholder="مثال: الاسم واللقب"
                       className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
                     />
                   </div>
@@ -813,19 +830,21 @@ ${payMethodTitle}
                         <span>تفاصيل موقع التوصيل:</span>
                       </span>
 
-                      <button
-                        type="button"
-                        onClick={handleGetLocation}
-                        disabled={isLocating}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A0E17]/10 hover:bg-[#4A0E17]/20 text-[#4A0E17] rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
-                      >
-                        {isLocating ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#4A0E17]" />
-                        ) : (
-                          <Compass className="w-3.5 h-3.5 text-[#C59B27]" />
-                        )}
-                        <span>{isLocating ? (isAr ? "جاري التحديد..." : "Locating...") : (isAr ? "تحديد موقعي بالـ GPS" : "Use GPS")}</span>
-                      </button>
+                    <button
+  type="button"
+  onClick={handleGetLocation}
+  disabled={isLocating}
+  className="flex items-center gap-2 px-3.5 py-2 bg-[#4A0E17] hover:bg-[#34050D] text-white border border-[#C59B27]/40 rounded-xl text-xs font-black shadow-md hover:shadow-lg active:scale-95 transition-all duration-200 cursor-pointer disabled:opacity-50"
+>
+  {isLocating ? (
+    <Loader2 className="w-4 h-4 animate-spin text-[#E5C058]" />
+  ) : (
+    <Compass className="w-4 h-4 text-[#E5C058] animate-pulse" />
+  )}
+  <span className="tracking-wide">
+    {isLocating ? (isAr ? "جاري التحديد..." : "Locating...") : (isAr ? "تحديد موقعي بالـ GPS" : "Use GPS")}
+  </span>
+</button>
                     </div>
 
                     {mapsLink && (
@@ -836,92 +855,90 @@ ${payMethodTitle}
                         </span>
                         <a href={mapsLink} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-900 font-black underline flex items-center gap-1">
                           <span>معاينة</span>
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
                     )}
 
                     <div className="grid grid-cols-2 gap-3">
-                  
-  {/* 🇸🇦 حقل اختيار المدينة الذكي والمحمي */}
-              <div className="relative">
-                <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                  {isAr ? "المدينة *" : "City *"}
-                </label>
-                
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={city}
-                    onFocus={() => setIsCityDropdownOpen(true)}
-                    onChange={(e) => {
-                      setCity(e.target.value);
-                      setIsCityDropdownOpen(true);
-                    }}
-                    placeholder={isAr ? "ابحث أو اختر مدينتك..." : "Search your city..."}
-                    className={`w-full bg-[#FAF5ED] border rounded-xl px-3 py-2 text-xs font-bold text-stone-800 transition focus:outline-hidden ${
-                      city && !isCityValid
-                        ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
-                        : isCityValid
-                        ? "border-emerald-400 focus:border-emerald-600 bg-emerald-50/20"
-                        : "border-stone-200 focus:border-[#4A0E17]"
-                    }`}
-                  />
-
-                  {/* أيقونة حالة التحقق */}
-                  {isCityValid && (
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs pointer-events-none">
-                      ✓
-                    </span>
-                  )}
-                </div>
-
-                {/* القائمة المنسدلة الذكية للبحث السريع */}
-                {isCityDropdownOpen && (
-                  <>
-                    {/* طبقة إغلاق عند النقر في أي مكان آخر */}
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setIsCityDropdownOpen(false)}
-                    />
-
-                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-stone-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto no-scrollbar py-1">
-                      {filteredCities.length === 0 ? (
-                        <div className="p-3 text-center text-xs text-rose-600 font-bold">
-                          {isAr ? "لا توجد مدينة بهذا الاسم في المملكة" : "City not found"}
-                        </div>
-                      ) : (
-                        filteredCities.map((cityName) => (
-                          <button
-                            key={cityName}
-                            type="button"
-                            onClick={() => {
-                              setCity(cityName);
-                              setIsCityDropdownOpen(false);
+                      {/* 🇸🇦 حقل اختيار المدينة الذكي والمحمي */}
+                      <div className="relative">
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          {isAr ? "المدينة *" : "City *"}
+                        </label>
+                        
+                        <div className="relative">
+                          <input
+                            type="text"
+                            required
+                            value={city}
+                            onFocus={() => setIsCityDropdownOpen(true)}
+                            onChange={(e) => {
+                              setCity(e.target.value);
+                              setIsCityDropdownOpen(true);
                             }}
-                            className={`w-full text-right px-3.5 py-2 text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                              city === cityName
-                                ? "bg-[#4A0E17] text-[#E5C058]"
-                                : "hover:bg-stone-100 text-stone-700"
+                            placeholder={isAr ? "ابحث أو اختر مدينتك..." : "Search your city..."}
+                            className={`w-full bg-[#FAF5ED] border rounded-xl px-3 py-2 text-xs font-bold text-stone-800 transition focus:outline-hidden ${
+                              city && !isCityValid
+                                ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
+                                : isCityValid
+                                ? "border-emerald-400 focus:border-emerald-600 bg-emerald-50/20"
+                                : "border-stone-200 focus:border-[#4A0E17]"
                             }`}
-                          >
-                            <span>{cityName}</span>
-                            {city === cityName && <span>✓</span>}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </>
-                )}
+                          />
 
-                {/* تحذير صارم يظهر فوراً إذا كتب حرفاً غير مكتمل أو مدينة وهمية */}
-                {city && !isCityValid && (
-                  <span className="text-[10.5px] text-rose-600 font-bold mt-1 block animate-in fade-in">
-                    ⚠️ يرجى اختيار المدينة المعتمدة من القائمة
-                  </span>
-                )}
-              </div>
+                          {/* أيقونة حالة التحقق */}
+                          {isCityValid && (
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs pointer-events-none">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+
+                        {/* القائمة المنسدلة الذكية للبحث السريع */}
+                        {isCityDropdownOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={() => setIsCityDropdownOpen(false)}
+                            />
+
+                            <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-stone-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto no-scrollbar py-1">
+                              {filteredCities.length === 0 ? (
+                                <div className="p-3 text-center text-xs text-rose-600 font-bold">
+                                  {isAr ? "لا توجد مدينة بهذا الاسم في المملكة" : "City not found"}
+                                </div>
+                              ) : (
+                                filteredCities.map((cityName) => (
+                                  <button
+                                    key={cityName}
+                                    type="button"
+                                    onClick={() => {
+                                      setCity(cityName);
+                                      setIsCityDropdownOpen(false);
+                                    }}
+                                    className={`w-full text-right px-3.5 py-2 text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                                      city === cityName
+                                        ? "bg-[#4A0E17] text-[#E5C058]"
+                                        : "hover:bg-stone-100 text-stone-700"
+                                    }`}
+                                  >
+                                    <span>{cityName}</span>
+                                    {city === cityName && <span>✓</span>}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </>
+                        )}
+
+                        {city && !isCityValid && (
+                          <span className="text-[10.5px] text-rose-600 font-bold mt-1 block animate-in fade-in">
+                            ⚠️ يرجى اختيار المدينة المعتمدة من القائمة
+                          </span>
+                        )}
+                      </div>
+
                       <div>
                         <label className="block text-[11px] font-bold text-stone-700 mb-1">
                           {isAr ? "الحي *" : "District *"}
@@ -932,21 +949,28 @@ ${payMethodTitle}
                           value={district}
                           onChange={(e) => setDistrict(e.target.value)}
                           placeholder="مثال: حي النخيل"
-                          className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
+                          className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
                         />
                       </div>
                     </div>
 
+                    {/* 🌟 حقل الشارع وتفاصيل المنزل أصبح إجبارياً بحماية كاملة */}
                     <div>
                       <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                        {isAr ? "الشارع وتفاصيل المنزل (اختياري):" : "Street / House Details:"}
+                        {isAr ? "الشارع وتفاصيل المنزل *" : "Street / House Details *"}
                       </label>
                       <input
                         type="text"
+                        required
+                        minLength={3}
                         value={street}
                         onChange={(e) => setStreet(e.target.value)}
-                        placeholder="اسم الشارع أو رقم الفيلا"
-                        className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
+                        placeholder={isAr ? "اسم الشارع، رقم العمارة أو رقم الفيلا *" : "Street name, villa or building number *"}
+                        className={`w-full bg-[#FAF5ED] border rounded-xl px-3 py-2 text-xs focus:outline-hidden font-bold transition ${
+                          street.trim().length >= 3
+                            ? "border-emerald-300 focus:border-emerald-500"
+                            : "border-stone-200 focus:border-[#4A0E17]"
+                        }`}
                       />
                     </div>
                   </div>
@@ -1091,7 +1115,7 @@ ${payMethodTitle}
                     </div>
                     <div className="text-right">
                       <span className="text-xs font-black text-stone-900 block">{BANK_DETAILS.brandTitle}</span>
-                      <span className="text-[10px] text-stone-400">تحويل مباشر مع باركود الراجحي وإشعار الواتساب</span>
+                      <span className="text-[10px] text-stone-400">تحويل مباشر</span>
                     </div>
                   </div>
                   <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2.5 py-1 rounded-full border border-amber-300/50">
@@ -1120,7 +1144,7 @@ ${payMethodTitle}
 
                     <div className="flex flex-col sm:flex-row items-center gap-4 bg-black/25 p-3.5 rounded-2xl border border-white/10">
                       
-                      {/* الباركود المستدعى محلياً بأمان وبدون أخطاء */}
+                      {/* الباركود المستدعى محلياً */}
                       <div className="bg-white p-2.5 rounded-2xl shadow-md shrink-0 flex flex-col items-center justify-center">
                         <div className="relative w-28 h-28">
                           <Image
@@ -1205,7 +1229,7 @@ ${payMethodTitle}
                     <div className="text-right">
                       <span className="text-xs font-black text-stone-900 block">الدفع نقداً</span>
                       <span className="text-[10px] text-stone-400">
-                        {deliveryMode === "delivery" ? "تسليم المبلغ للمندوب يداً بيد عند الوصول" : "الدفع عند الاستلام داخل المحل"}
+                        {deliveryMode === "delivery" ? "الدفع عند استلام الطلب من المندوب" : "الدفع عند الاستلام داخل المحل"}
                       </span>
                     </div>
                   </div>

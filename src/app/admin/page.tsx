@@ -7,7 +7,7 @@ import {
   ShoppingBag, Layers, RefreshCw, LogOut, 
   Upload, Volume2, Loader2, Sparkles, Coins, Wand2, 
   Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal,
-  PackagePlus, MessageSquare, Eye, EyeOff, Lock, User, KeyRound, AlertTriangle
+  PackagePlus, MessageSquare, Eye, EyeOff, Lock, User, KeyRound, AlertTriangle, Scale
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 import { OrdersManager, type AdminOrder } from "./OrdersManager";
@@ -37,6 +37,7 @@ export interface ProductItem {
   image_url?: string;
   images?: string[];
   is_available?: boolean;
+  has_weights?: boolean; // 👈 دعم نظام الأوزان
   description_ar?: string | null;
   description_en?: string | null;
   ingredients?: { nameAr: string; nameEn: string; icon: string }[];
@@ -199,8 +200,16 @@ export default function AdminDashboard() {
   // إدارة المنتجات
   const [editingProdId, setEditingProdId] = useState<string | null>(null);
   const [newProd, setNewProd] = useState({
-    title_ar: "", title_en: "", category_slug: "", base_price: "",
-    original_price: "", image_url: "", is_available: true, description_ar: "", description_en: ""
+    title_ar: "", 
+    title_en: "", 
+    category_slug: "", 
+    base_price: "",
+    original_price: "", 
+    image_url: "", 
+    is_available: true, 
+    has_weights: true, // 👈 الافتراضي true
+    description_ar: "", 
+    description_en: ""
   });
   const [productImages, setProductImages] = useState<string[]>([]);
   const [productIngredients, setProductIngredients] = useState<{ nameAr: string; nameEn: string; icon: string }[]>([]);
@@ -506,6 +515,7 @@ export default function AdminDashboard() {
         image_url: primaryImg,
         images: finalImagesList,
         is_available: Boolean(newProd.is_available),
+        has_weights: Boolean(newProd.has_weights), // 👈 حفظ خيار الأوزان في Supabase
         description_ar: newProd.description_ar.trim(),
         description_en: newProd.description_en.trim(),
         ingredients: productIngredients,
@@ -524,7 +534,8 @@ export default function AdminDashboard() {
       setEditingProdId(null);
       setNewProd({
         title_ar: "", title_en: "", category_slug: categories[0]?.slug || "",
-        base_price: "", original_price: "", image_url: "", is_available: true, description_ar: "", description_en: ""
+        base_price: "", original_price: "", image_url: "", is_available: true,
+        has_weights: true, description_ar: "", description_en: ""
       });
       setProductImages([]);
       setProductIngredients([]);
@@ -729,7 +740,7 @@ export default function AdminDashboard() {
     );
   }
 
-  // إذا لم يكن مسجل الدخول، تظهر شاشة الدخول الملكية مباشرة في نفس صفحة /admin دون أي تحويل خارجي
+  // إذا لم يكن مسجل الدخول، تظهر شاشة الدخول الملكية
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF5ED] flex items-center justify-center p-4">
@@ -1057,7 +1068,8 @@ export default function AdminDashboard() {
                       setEditingProdId(null);
                       setNewProd({
                         title_ar: "", title_en: "", category_slug: categories[0]?.slug || "",
-                        base_price: "", original_price: "", image_url: "", is_available: true, description_ar: "", description_en: ""
+                        base_price: "", original_price: "", image_url: "", is_available: true,
+                        has_weights: true, description_ar: "", description_en: ""
                       });
                       setProductImages([]);
                       setProductIngredients([]);
@@ -1134,9 +1146,28 @@ export default function AdminDashboard() {
                   />
                 </div>
 
+                {/* 🌟 كرت خيارات الأوزان (has_weights) */}
                 <div className="flex items-center justify-between p-2.5 bg-[#FAF5ED] border border-stone-200 rounded-xl">
                   <div>
-                    <span className="font-bold block text-stone-800">حالة التوفر:</span>
+                    <span className="font-bold block text-stone-800">نظام البيع بالأوزان:</span>
+                    <span className="text-[10px] text-stone-500 font-medium">
+                      {newProd.has_weights ? "مفعّل (ربع/نصف/كيلو ⚖️)" : "معطّل (سعر الحبة/فردي ☕)"}
+                    </span>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newProd.has_weights}
+                      onChange={(e) => setNewProd({ ...newProd, has_weights: e.target.checked })}
+                      className="w-5 h-5 accent-[#4A0E17] rounded-md cursor-pointer"
+                    />
+                  </label>
+                </div>
+
+                {/* كرت حالة التوفر */}
+                <div className="flex items-center justify-between p-2.5 bg-[#FAF5ED] border border-stone-200 rounded-xl md:col-span-3">
+                  <div>
+                    <span className="font-bold block text-stone-800">حالة التوفر بالمخزون:</span>
                     <span className="text-[10px] text-stone-500 font-medium">
                       {newProd.is_available ? "متوفر للطلب الفوري 🟢" : "نفدت الكمية مؤقتاً 🔴"}
                     </span>
@@ -1346,6 +1377,7 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {products.map((p) => {
                 const isAvail = p.is_available ?? true;
+                const isWeighted = p.has_weights ?? true;
                 const imagesCount = Array.isArray(p.images) ? p.images.length : (p.image_url ? 1 : 0);
 
                 return (
@@ -1360,7 +1392,16 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-xs truncate">{p.title_ar}</h4>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="font-bold text-xs truncate">{p.title_ar}</h4>
+                          <span className={`text-[8.5px] px-1.5 py-0.2 rounded-md font-bold shrink-0 ${
+                            isWeighted 
+                              ? "bg-amber-100 text-amber-900 border border-amber-200" 
+                              : "bg-blue-100 text-blue-900 border border-blue-200"
+                          }`}>
+                            {isWeighted ? "بالوزن ⚖️" : "فردي ☕"}
+                          </span>
+                        </div>
                         <span className="text-[10px] text-stone-400 block truncate">{p.title_en}</span>
                         <span className="text-xs font-black text-[#4A0E17] block font-mono">
                           {Number(p.base_price).toFixed(2)} ر.س
@@ -1379,6 +1420,7 @@ export default function AdminDashboard() {
                               original_price: p.original_price ? String(p.original_price) : "",
                               image_url: p.image_url || "",
                               is_available: p.is_available ?? true,
+                              has_weights: p.has_weights ?? true, // 👈 قراءة قيمة الوزن عند التعديل
                               description_ar: p.description_ar || "",
                               description_en: p.description_en || "",
                             });

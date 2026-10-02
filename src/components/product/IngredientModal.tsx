@@ -37,6 +37,8 @@ export interface ExtendedProduct extends Product {
   title_en?: string;
   description_ar?: string | null;
   description_en?: string | null;
+  has_weights?: boolean;
+  hasWeights?: boolean ;
 }
 
 interface IngredientModalProps {
@@ -72,6 +74,9 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   // مؤشر الصورة الحالية
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
+  // التحقق من تفعيل خيارات الأوزان (الافتراضي مفعل للبقلاوة)
+  const hasWeights = product?.has_weights !== false && product?.hasWeights !== false;
+
   const [multiplier, setMultiplier] = useState(1);
   const [selectedWeightLabel, setSelectedWeightLabel] = useState(
     isAr ? "ربع كيلو (250g)" : "250g Quarter"
@@ -99,10 +104,10 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   }, [product]);
 
   const isSoldOut = Boolean(
-  product?.is_available === false ||
-  product?.isOutOfStock === true ||
-  product?.is_out_of_stock === true
-);
+    product?.is_available === false ||
+    product?.isOutOfStock === true ||
+    product?.is_out_of_stock === true
+  );
 
   // إعادة ضبط الحالة بشكل غير متزامن لتفادي أخطاء React
   useEffect(() => {
@@ -111,14 +116,18 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     const resetTimer = setTimeout(() => {
       setCurrentImageIndex(0);
       setMultiplier(1);
-      setSelectedWeightLabel(isAr ? "ربع كيلو (250g)" : "250g Quarter");
+      setSelectedWeightLabel(
+        hasWeights
+          ? (isAr ? "ربع كيلو (250g)" : "250g Quarter")
+          : ""
+      );
       setUserRating(5);
       setNewComment("");
       setReviewerName("");
     }, 0);
 
     return () => clearTimeout(resetTimer);
-  }, [product?.id, isAr]);
+  }, [product?.id, isAr, hasWeights]);
 
   // إغلاق النافذة بزر Escape
   useEffect(() => {
@@ -159,14 +168,13 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
-    };
+  clearTimeout(timer);    }; 
   }, [product?.id]);
 
   if (!product) return null;
 
   const basePrice = Number(product.basePrice ?? product.base_price ?? product.price ?? 0);
-  const currentPrice = basePrice * multiplier;
+  const currentPrice = hasWeights ? basePrice * multiplier : basePrice;
   const productTitleAr = product.titleAr || product.title_ar || "صنف فاخر";
   const productTitleEn = product.titleEn || product.title_en || "Signature Item";
   const productDescAr = product.descriptionAr || product.description_ar;
@@ -204,7 +212,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
         title: isAr ? productTitleAr : productTitleEn,
         price: currentPrice,
         image: imagesList[0] || "/hero-baklava.png",
-        portionNote: selectedWeightLabel,
+        portionNote: hasWeights ? selectedWeightLabel : "",
       },
       e
     );
@@ -435,52 +443,54 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             )}
           </div>
 
-          {/* 3. خيارات الوزن والتغليف */}
-          <div className="space-y-2">
-            <label className="block text-xs font-black text-[#4A0E17]">
-              {isAr ? "اختر الوزن والتغليف الملكي:" : "Select Portion & Packaging:"}
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleSelectPortion(1, "ربع كيلو (250g)", "250g Quarter")}
-                className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                  multiplier === 1
-                    ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
-                    : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
-                }`}
-              >
-                <span className="block text-xs font-black">{t("portionQuarter")}</span>
-                <span className="text-[10px] text-stone-400 block mt-0.5">8 - 10 قطع</span>
-              </button>
+          {/* 3. خيارات الوزن والتغليف (تظهر فقط إذا كان المنتج يدعم الأوزان) */}
+          {hasWeights && (
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-[#4A0E17]">
+                {isAr ? "اختر الوزن والتغليف الملكي:" : "Select Portion & Packaging:"}
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSelectPortion(1, "ربع كيلو (250g)", "250g Quarter")}
+                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
+                    multiplier === 1
+                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
+                      : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
+                  }`}
+                >
+                  <span className="block text-xs font-black">{t("portionQuarter")}</span>
+                  <span className="text-[10px] text-stone-400 block mt-0.5">8 - 10 قطع</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => handleSelectPortion(1.85, "نصف كيلو (500g)", "500g Half")}
-                className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                  multiplier === 1.85
-                    ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
-                    : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
-                }`}
-              >
-                <span className="block text-xs font-black">{t("portionHalf")}</span>
-                <span className="text-[10px] text-stone-400 block mt-0.5">16 - 20 قطعة</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPortion(1.85, "نصف كيلو (500g)", "500g Half")}
+                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
+                    multiplier === 1.85
+                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
+                      : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
+                  }`}
+                >
+                  <span className="block text-xs font-black">{t("portionHalf")}</span>
+                  <span className="text-[10px] text-stone-400 block mt-0.5">16 - 20 قطعة</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => handleSelectPortion(3.5, "1 كجم فاخر (صندوق خشبي)", "1 Kg Royal Box")}
-                className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                  multiplier === 3.5
-                    ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
-                    : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
-                }`}
-              >
-                <span className="block text-xs font-black">{t("portionKilo")}</span>
-                <span className="text-[10px] text-[#C59B27] font-black block mt-0.5">بوكس إهداء فاخر</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPortion(3.5, "1 كجم فاخر (صندوق خشبي)", "1 Kg Royal Box")}
+                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
+                    multiplier === 3.5
+                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
+                      : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
+                  }`}
+                >
+                  <span className="block text-xs font-black">{t("portionKilo")}</span>
+                  <span className="text-[10px] text-[#C59B27] font-black block mt-0.5">بوكس إهداء فاخر</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 4. تجارب وتقييمات العملاء */}
           <div className="bg-white rounded-3xl p-5 border border-stone-200/90 space-y-5 shadow-2xs">
@@ -491,7 +501,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                     <MessageSquare className="w-4 h-4 text-[#C59B27]" />
                   </div>
                   <h4 className="text-xs font-black text-stone-900">
-                    {isAr ? "تقييمات وتجارب العملاء الملكية" : "Royal Customer Reviews"}
+                    {isAr ? "تقييمات وتجارب العملاء " : "Royal Customer Reviews"}
                   </h4>
                 </div>
                 <p className="text-[10px] text-stone-400 mt-0.5">
@@ -637,7 +647,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <span className="leading-relaxed">
               {isAr
-                ? "تنبيه مسببات الحساسية: يحتوي هذا الصنف على الفستق الحلبي، المكسرات، ومشتقات القمح والحليب والسمن البقري الطبيعي."
+                ? "تنبيه مسببات الحساسية: اخبرنا اذا كان يوجد لديك اي حساسية من شي معيا."
                 : "Allergen Warning: Contains tree nuts, wheat, dairy, and natural ghee."}
             </span>
           </div>

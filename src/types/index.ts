@@ -19,6 +19,7 @@ export interface Product {
   descriptionAr: string;
   descriptionEn: string;
   ingredients: Ingredient[];
+  has_weights?: boolean; // 👈 أضف هذا الحقل هنا
 }
 
 // 3. نوع التصنيف

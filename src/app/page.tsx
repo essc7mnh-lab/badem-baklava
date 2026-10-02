@@ -67,6 +67,7 @@ interface RawSupabaseProduct {
   description_ar?: string | null;
   description_en?: string | null;
   ingredients?: Product["ingredients"];
+  has_weights?: boolean | null;
 }
 
 // مفاتيح الكاش المحلي المؤقت
@@ -150,6 +151,7 @@ export default function Home() {
               descriptionAr: d.description_ar || "",
               descriptionEn: d.description_en || "",
               ingredients: (d.ingredients || []) as NonNullable<Product["ingredients"]>,
+              has_weights: d.has_weights ?? true,
             }));
 
             setProductsData(formattedList);

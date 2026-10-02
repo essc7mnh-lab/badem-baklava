@@ -13,18 +13,28 @@ export const BrandStoryMarquee: React.FC = () => {
 
   const rawStoryItems = isAr
     ? [
-        "حكاية تبدأ من حقول الفستق الذهبية في غازي عنتاب",
-        "40 طبقة من الشغف والصنعة اليدوية العريقة",
-        "تُحضر طازجة يومياً بأجود أنواع السمن البلدي",
-        "من قلب تركيا إلى مائدتكم الفاخرة في الرياض",
-        "عراقة المذاق وأصالة الضيافة الملكية",
+        "بقلاوة تركية أصيلة • تُصنع بعناية وتُقدّم كما يجب",
+        "فستق عنتابي فاخر • جودة تذوقها من أول حبة",
+        "من تركيا إلى بـادم • أصالة في كل لقمة",
+        "تفاصيل تُصنع بعناية • وطعم لا يُنسى",
+        "بقلاوة بـادم • حيث تلتقي الأصالة بالفخامة",
+        "أجود المكونات • وألذ التفاصيل",
+        "حلا يليق بذوقك • من بـادم",
+        "صُنعت بإتقان • لتستمتع بكل حبة",
+        "طعم فاخر • جودة تستحق التجربة",
+        "بـادم • وجهتك للبقلاوة التركية الأصيلة",
       ]
     : [
-        "A story born from the golden pistachio fields of Gaziantep",
-        "40 layers of passion and master craftsmanship",
-        "Baked fresh daily with premium pure butter",
-        "From the heart of Turkey straight to your Riyadh table",
-        "The true essence of royal Turkish hospitality",
+        "Authentic Turkish Baklava • Handcrafted with perfection",
+        "Premium Antep Pistachio • Quality in every single bite",
+        "From Turkey to Badem • Heritage in every layer",
+        "Carefully crafted details • An unforgettable taste",
+        "Badem Baklava • Where heritage meets royal luxury",
+        "Finest pure ingredients • The most exquisite details",
+        "A royal sweet worthy of your taste • By Badem",
+        "Baked to perfection • To savor every single piece",
+        "Luxurious flavor • An experience worth savoring",
+        "Badem • Your destination for genuine Turkish baklava",
       ];
 
   // في العربي نعكس ترتيب عناصر المسار لتظهر الجملة الأولى أولاً أثناء التحرك نحو اليمين
@@ -75,7 +85,7 @@ export const BrandStoryMarquee: React.FC = () => {
             flex-shrink: 0;
             align-items: center;
             white-space: nowrap;
-            animation: marqueeLoopRTL 32s linear infinite;
+            animation: marqueeLoopRTL 50s linear infinite;
           }
 
           .royal-track-en {
@@ -83,7 +93,7 @@ export const BrandStoryMarquee: React.FC = () => {
             flex-shrink: 0;
             align-items: center;
             white-space: nowrap;
-            animation: marqueeLoopLTR 32s linear infinite;
+            animation: marqueeLoopLTR 50s linear infinite;
           }
 
           @media (hover: hover) {
