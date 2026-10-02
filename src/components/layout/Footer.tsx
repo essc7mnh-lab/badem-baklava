@@ -57,7 +57,7 @@ export const Footer: React.FC = () => {
         <div className="flex flex-col items-center text-center space-y-1">
           <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#C59B27]/15 border border-[#C59B27]/30 text-[#E5C058] text-[9.5px] font-black tracking-widest uppercase mb-1 shadow-2xs">
             <Sparkles className="w-3 h-3 text-[#E5C058]" />
-            <span>{isAr ? "أصالة الضيافة الملكية" : "ROYAL TURKISH HOSPITALITY"}</span>
+            <span>{isAr ? "أصالة الضيافة " : "ROYAL TURKISH HOSPITALITY"}</span>
           </div>
           <h3 className="font-black text-[#FAF5ED] font-brand text-xl sm:text-2xl tracking-[0.2em] uppercase drop-shadow-sm">
             BADEM BAKLAVA
