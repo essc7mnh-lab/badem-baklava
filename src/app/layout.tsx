@@ -28,6 +28,7 @@ export const metadata: Metadata = {
   title: {
     default: "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
     template: "%s | متجر بادَم للبقلاوة الفاخرة",
+    
   },
   description:
     "أفخر أنواع البقلاوة التركية الفاخرة بأجود أنواع الفستق العنتابي والسمن البلدي الصافي. طازجة وتوصيل سريع لكافة مدن المملكة العربية السعودية.",
@@ -58,6 +59,7 @@ export const metadata: Metadata = {
         height: 630,
         alt: "متجر بادَم للبقلاوة الفاخرة",
       },
+      
     ],
     locale: "ar_SA",
     type: "website",
@@ -78,6 +80,9 @@ export const metadata: Metadata = {
       "max-image-preview": "large",
       "max-snippet": -1,
     },
+  },
+  verification: {
+    google: "google5381463d2568b388.html",
   },
 };
 
