@@ -30,6 +30,9 @@ export const metadata: Metadata = {
     template: "%s | متجر بادَم للبقلاوة الفاخرة",
     
   },
+  verification: {
+  google: "AO44WoATQJhOSWwp6Gb8t1Kl5Yn0ktQguwHuZz04uj4",
+},
   description:
     "أفخر أنواع البقلاوة التركية الفاخرة بأجود أنواع الفستق العنتابي والسمن البلدي الصافي. طازجة وتوصيل سريع لكافة مدن المملكة العربية السعودية.",
   keywords: [
@@ -80,10 +83,7 @@ export const metadata: Metadata = {
       "max-image-preview": "large",
       "max-snippet": -1,
     },
-  },
-  verification: {
-    google: "google5381463d2568b388.html",
-  },
+  },  
 };
 
 export default function RootLayout({
