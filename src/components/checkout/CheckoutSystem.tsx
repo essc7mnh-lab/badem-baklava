@@ -44,62 +44,9 @@ const BANK_DETAILS = {
   qrImage: "/alrajhi-qr.png", // تأكد من وجود ملف alrajhi-qr.png داخل مجلد public
 };
 
+// 🇸🇦 التوصيل محصور رسمياً داخل مدينة الرياض فقط
 const SAUDI_CITIES = [
-  // 🌟 المدن الرئيسية (الأكثر طلباً)
-  "الرياض",
-  "جدة",
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "الدمام",
-  "الخبر",
-  "الظهران",
-  
-  // 📍 المنطقة الوسطى
-  "الخرج",
-  "المجمعة",
-  "الدرعية",
-  "الدوادمي",
-  "وادي الدواسر",
-  "الزلفي",
-  "شقراء",
-
-  // 📍 منطقة القصيم
-  "بريدة",
-  "عنيزة",
-  "الرس",
-  "البكيرية",
-
-  // 📍 المنطقة الشرقية
-  "الأحساء (الهفوف والمبرز)",
-  "الجبيل",
-  "حفر الباطن",
-  "القطيف",
-  "الخفجي",
-  "رأس تنورة",
-
-  // 📍 المنطقة الغربية
-  "الطائف",
-  "ينبع",
-  "رابغ",
-
-  // 📍 المنطقة الجنوبية
-  "أبها",
-  "خميس مشيط",
-  "جازان",
-  "صبيا",
-  "نجران",
-  "الباحة",
-  "بيشة",
-  "محايل عسير",
-
-  // 📍 المنطقة الشمالية
-  "تبوك",
-  "حائل",
-  "عرعر",
-  "سكاكا",
-  "القريات",
-  "طريف",
-  "رفحاء"
+  "الرياض"
 ];
 
 interface CheckoutSystemProps {
@@ -153,7 +100,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const { userName, setUserName, userPhone, setUserPhone, addOrder } = useUser();
   const [currentStep, setCurrentStep] = useState<Step>("details");
 
-  // بيانات العميل والعنوان
+  // بيانات العميل والعنوان - الرياض مثبتة تلقائياً
   const [customerName, setCustomerName] = useState(userName || "");
   const [phone, setPhone] = useState(userPhone || "");
   const [city, setCity] = useState("الرياض");
@@ -163,7 +110,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
 
-  // تصفية المدن فورياً أثناء كتابة العميل
+  // تصفية المدن (الرياض فقط)
   const filteredCities = useMemo(() => {
     if (!city.trim()) return SAUDI_CITIES;
     return SAUDI_CITIES.filter((c) =>
@@ -171,7 +118,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     );
   }, [city]);
 
-  // فحص صارم: هل المدينة المدخلة موجودة فعلياً في قائمة مدن المملكة الرسمية؟
+  // فحص صارم: التوصيل متاح داخل الرياض فقط
   const isCityValid = useMemo(() => {
     return SAUDI_CITIES.includes(city.trim());
   }, [city]);
@@ -197,7 +144,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [backupWhatsAppUrl, setBackupWhatsAppUrl] = useState<string | null>(null);
   const etaMinutes = deliveryMode === "delivery" ? 40 : 20;
 
-  // مزامنة بيانات المستخدم المسجلة تلقائياً بدون تعليق تصيير الواجهة
+  // مزامنة بيانات المستخدم المسجلة تلقائياً
   useEffect(() => {
     const timer = setTimeout(() => {
       if (userName && !customerName) setCustomerName(userName);
@@ -219,7 +166,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
   if (!isOpen) return null;
 
-  // 📍 تحديد الموقع الجغرافي التفاعلي بالـ GPS
+  // 📍 تحديد الموقع الجغرافي واستخراج المدينة والحي والشارع بذكاء واحترافية
   const handleGetLocation = () => {
     if (typeof window === "undefined" || !navigator.geolocation) {
       alert(isAr ? "متصفحك لا يدعم ميزة تحديد الموقع الجغرافي" : "Geolocation is not supported by your browser");
@@ -235,23 +182,93 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar`
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=ar`
           );
+
           if (res.ok) {
             const data = await res.json();
-            if (data?.address) {
-              const addr = data.address;
-              const detectedCity = addr.city || addr.town || addr.state || city;
-              const detectedDistrict = addr.suburb || addr.neighbourhood || addr.quarter || addr.residential || "";
-              const detectedRoad = addr.road || "";
 
-              if (detectedCity) setCity(detectedCity);
-              if (detectedDistrict) setDistrict(detectedDistrict);
-              if (detectedRoad && !street) setStreet(detectedRoad);
+            // 🌟 1. الفحص الذكي: هل العميل داخل نطاق الرياض فعلياً؟
+            const isInsideRiyadh =
+              (data.city && (data.city.includes("الرياض") || data.city.toLowerCase().includes("riyadh"))) ||
+              (data.principalSubdivision && (data.principalSubdivision.includes("الرياض") || data.principalSubdivision.toLowerCase().includes("riyadh"))) ||
+              (data.locality && (data.locality.includes("الرياض") || data.locality.toLowerCase().includes("riyadh"))) ||
+              (Array.isArray(data.localityInfo?.administrative) &&
+                data.localityInfo.administrative.some(
+                  (a: { name?: string }) =>
+                    a.name && (a.name.includes("الرياض") || a.name.toLowerCase().includes("riyadh"))
+                ));
+
+            // تحديد اسم المدينة الحقيقي للعميل
+            let detectedCity = "الرياض";
+            if (isInsideRiyadh) {
+              detectedCity = "الرياض";
+            } else {
+              detectedCity =
+                data.city ||
+                (data.principalSubdivision ? data.principalSubdivision.replace(/^(محافظة|منطقة)\s+/, "") : "") ||
+                data.locality ||
+                "خارج الرياض";
+            }
+
+            // كتابة المدينة الحقيقية لإظهار التحقق الأخضر أو التنبيه الأحمر
+            setCity(detectedCity);
+
+            // 📍 2. استخراج اسم الحي بدقة
+            let detectedDistrict = data.locality || "";
+            if (
+              (!detectedDistrict || detectedDistrict === detectedCity) &&
+              Array.isArray(data.localityInfo?.administrative)
+            ) {
+              const subAdmin = data.localityInfo.administrative.find(
+                (item: { name?: string }) =>
+                  item.name &&
+                  item.name !== detectedCity &&
+                  item.name !== data.countryName &&
+                  item.name !== data.principalSubdivision
+              );
+              if (subAdmin?.name) detectedDistrict = subAdmin.name;
+            }
+            if (detectedDistrict) setDistrict(detectedDistrict);
+
+            // 📍 3. استخراج الشارع والمنزل (مع تنظيف أسماء الدولة والمحافظة)
+            let detectedRoad = "";
+            if (Array.isArray(data.localityInfo?.administrative)) {
+              const roadParts = data.localityInfo.administrative
+                .filter(
+                  (item: { name?: string }) =>
+                    item.name &&
+                    item.name !== data.countryName &&
+                    item.name !== data.principalSubdivision &&
+                    item.name !== detectedCity &&
+                    item.name !== detectedDistrict
+                )
+                .map((item: { name: string }) => item.name);
+
+              if (roadParts.length > 0) {
+                detectedRoad = roadParts.join(" - ");
+              }
+            }
+
+            if (detectedRoad) {
+              setStreet(detectedRoad);
+            } else if (!street) {
+              setStreet(`موقع محدد عبر الخريطة (قرب ${detectedDistrict || detectedCity})`);
+            }
+
+            // ⚠️ 4. تنبيه العميل فورياً إذا كان خارج الرياض
+            if (!isInsideRiyadh) {
+              setTimeout(() => {
+                alert(
+                  isAr
+                    ? `📍 تم تحديد موقعك في (${detectedCity}).\nنعتذر منك، خدمة التوصيل متوفرة حالياً داخل مدينة الرياض فقط 🚚.`
+                    : `📍 Detected location: (${detectedCity}).\nDelivery is currently available in Riyadh only.`
+                );
+              }, 300);
             }
           }
         } catch (e) {
-          console.warn("Geocoding non-blocking warning:", e);
+          console.warn("Geocoding notice:", e);
         } finally {
           setIsLocating(false);
         }
@@ -265,7 +282,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
             : "Please enable location permission in your browser."
         );
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
@@ -350,17 +367,16 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
       return;
     }
 
-    // 🔒 التحقق الإلزامي والأمني الصارم من العنوان في حال التوصيل
+    // 🔒 التحقق الإلزامي من العنوان داخل الرياض
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
-        alert(isAr ? "عذراً، يرجى اختيار مدينة صحيحة ومعتمدة من القائمة لإتمام التوصيل." : "Please select a valid city from the list.");
+        alert(isAr ? "عذراً، التوصيل متاح حالياً داخل مدينة الرياض فقط." : "Delivery is currently available in Riyadh only.");
         return;
       }
       if (!district.trim() || district.trim().length < 2) {
         alert(isAr ? "يرجى كتابة اسم الحي السكني بدقة." : "Please enter your district.");
         return;
       }
-      // 👈 إلزام إدخال الشارع وتفاصيل المنزل
       if (!street.trim() || street.trim().length < 3) {
         alert(isAr ? "يرجى إدخال اسم الشارع وتفاصيل المنزل (أو رقم الفيلا) بدقة لإتمام التوصيل." : "Please enter your street and house details.");
         return;
@@ -453,17 +469,15 @@ ${payMethodTitle}
 
   // ✅ تأكيد الطلب وحفظه في Supabase
   const handleConfirmOrder = async () => {
-    // 🔒 فحص أمان صارم قبل قبول الطلب:
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
-        alert(isAr ? "عذراً، يرجى اختيار مدينة صحيحة ومعتمدة من القائمة لإتمام التوصيل." : "Please select a valid city from the list.");
+        alert(isAr ? "عذراً، التوصيل متاح حالياً داخل مدينة الرياض فقط." : "Delivery is currently available in Riyadh only.");
         return;
       }
       if (!district.trim() || district.trim().length < 2) {
         alert(isAr ? "يرجى كتابة اسم الحي السكني بشكل صحيح." : "Please enter a valid district name.");
         return;
       }
-      // 👈 فحص إلزامي لمنع إرسال طلب بدون شارع
       if (!street.trim() || street.trim().length < 3) {
         alert(isAr ? "يرجى إدخال الشارع وتفاصيل المنزل لإتمام التوصيل." : "Please enter street and house details.");
         return;
@@ -821,34 +835,35 @@ ${payMethodTitle}
                   </div>
                 </div>
 
-                {/* 🌟 3. حقول العنوان تظهر فقط عند اختيار التوصيل للموقع */}
+                {/* 🌟 3. تفاصيل موقع التوصيل محصورة في الرياض */}
                 {deliveryMode === "delivery" ? (
                   <div className="space-y-3 pt-2 border-t border-stone-100 animate-in fade-in duration-200">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
                         <MapPin className="w-4 h-4 text-[#C59B27]" />
-                        <span>تفاصيل موقع التوصيل:</span>
+                        <span>تفاصيل موقع التوصيل (الرياض):</span>
                       </span>
 
-                    <button
-  type="button"
-  onClick={handleGetLocation}
-  disabled={isLocating}
-  className="flex items-center gap-2 px-3.5 py-2 bg-[#4A0E17] hover:bg-[#34050D] text-white border border-[#C59B27]/40 rounded-xl text-xs font-black shadow-md hover:shadow-lg active:scale-95 transition-all duration-200 cursor-pointer disabled:opacity-50"
->
-  {isLocating ? (
-    <Loader2 className="w-4 h-4 animate-spin text-[#E5C058]" />
-  ) : (
-    <Compass className="w-4 h-4 text-[#E5C058] animate-pulse" />
-  )}
-  <span className="tracking-wide">
-    {isLocating ? (isAr ? "جاري التحديد..." : "Locating...") : (isAr ? "تحديد موقعي بالـ GPS" : "Use GPS")}
-  </span>
-</button>
+                      {/* زر تحديد الموقع بالـ GPS البارز بالعنابي والذهب */}
+                      <button
+                        type="button"
+                        onClick={handleGetLocation}
+                        disabled={isLocating}
+                        className="flex items-center gap-2 px-3.5 py-2 bg-[#4A0E17] hover:bg-[#34050D] text-white border border-[#C59B27]/40 rounded-xl text-xs font-black shadow-md hover:shadow-lg active:scale-95 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                      >
+                        {isLocating ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-[#E5C058]" />
+                        ) : (
+                          <Compass className="w-4 h-4 text-[#E5C058] animate-pulse" />
+                        )}
+                        <span className="tracking-wide">
+                          {isLocating ? (isAr ? "جاري التحديد..." : "Locating...") : (isAr ? "تحديد موقعي بالـ GPS" : "Use GPS")}
+                        </span>
+                      </button>
                     </div>
 
                     {mapsLink && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-2.5 flex items-center justify-between text-xs text-emerald-800">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-2.5 flex items-center justify-between text-xs text-emerald-800 animate-in fade-in">
                         <span className="flex items-center gap-1.5 font-bold">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           <span>تم حفظ إحداثيات موقعك بدقة وسيتم إرفاقها للمندوب! 📍</span>
@@ -861,7 +876,7 @@ ${payMethodTitle}
                     )}
 
                     <div className="grid grid-cols-2 gap-3">
-                      {/* 🇸🇦 حقل اختيار المدينة الذكي والمحمي */}
+                      {/* حقل المدينة - الرياض فقط ومثبتة */}
                       <div className="relative">
                         <label className="block text-[11px] font-bold text-stone-700 mb-1">
                           {isAr ? "المدينة *" : "City *"}
@@ -877,17 +892,14 @@ ${payMethodTitle}
                               setCity(e.target.value);
                               setIsCityDropdownOpen(true);
                             }}
-                            placeholder={isAr ? "ابحث أو اختر مدينتك..." : "Search your city..."}
+                            placeholder="الرياض"
                             className={`w-full bg-[#FAF5ED] border rounded-xl px-3 py-2 text-xs font-bold text-stone-800 transition focus:outline-hidden ${
                               city && !isCityValid
                                 ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
-                                : isCityValid
-                                ? "border-emerald-400 focus:border-emerald-600 bg-emerald-50/20"
-                                : "border-stone-200 focus:border-[#4A0E17]"
+                                : "border-emerald-400 focus:border-emerald-600 bg-emerald-50/20"
                             }`}
                           />
 
-                          {/* أيقونة حالة التحقق */}
                           {isCityValid && (
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs pointer-events-none">
                               ✓
@@ -895,7 +907,7 @@ ${payMethodTitle}
                           )}
                         </div>
 
-                        {/* القائمة المنسدلة الذكية للبحث السريع */}
+                        {/* قائمة مدينة الرياض الحصرية */}
                         {isCityDropdownOpen && (
                           <>
                             <div
@@ -906,7 +918,7 @@ ${payMethodTitle}
                             <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-stone-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto no-scrollbar py-1">
                               {filteredCities.length === 0 ? (
                                 <div className="p-3 text-center text-xs text-rose-600 font-bold">
-                                  {isAr ? "لا توجد مدينة بهذا الاسم في المملكة" : "City not found"}
+                                  {isAr ? "التوصيل متاح حالياً داخل مدينة الرياض فقط" : "Delivery available in Riyadh only"}
                                 </div>
                               ) : (
                                 filteredCities.map((cityName) => (
@@ -917,14 +929,10 @@ ${payMethodTitle}
                                       setCity(cityName);
                                       setIsCityDropdownOpen(false);
                                     }}
-                                    className={`w-full text-right px-3.5 py-2 text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                                      city === cityName
-                                        ? "bg-[#4A0E17] text-[#E5C058]"
-                                        : "hover:bg-stone-100 text-stone-700"
-                                    }`}
+                                    className="w-full text-right px-3.5 py-2 text-xs font-bold transition flex items-center justify-between cursor-pointer bg-[#4A0E17] text-[#E5C058]"
                                   >
                                     <span>{cityName}</span>
-                                    {city === cityName && <span>✓</span>}
+                                    <span>✓</span>
                                   </button>
                                 ))
                               )}
@@ -933,12 +941,13 @@ ${payMethodTitle}
                         )}
 
                         {city && !isCityValid && (
-                          <span className="text-[10.5px] text-rose-600 font-bold mt-1 block animate-in fade-in">
-                            ⚠️ يرجى اختيار المدينة المعتمدة من القائمة
+                          <span className="text-[10px] text-rose-600 font-bold mt-1 block animate-in fade-in">
+                            ⚠️ التوصيل متاح حالياً داخل مدينة الرياض فقط
                           </span>
                         )}
                       </div>
 
+                      {/* حقل الحي - يتعبأ تلقائياً عند الضغط على GPS */}
                       <div>
                         <label className="block text-[11px] font-bold text-stone-700 mb-1">
                           {isAr ? "الحي *" : "District *"}
@@ -948,13 +957,13 @@ ${payMethodTitle}
                           required
                           value={district}
                           onChange={(e) => setDistrict(e.target.value)}
-                          placeholder="مثال: حي النخيل"
+                          placeholder="مثال: حي المحمدية"
                           className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
                         />
                       </div>
                     </div>
 
-                    {/* 🌟 حقل الشارع وتفاصيل المنزل أصبح إجبارياً بحماية كاملة */}
+                    {/* حقل الشارع والمنزل - يتعبأ تلقائياً عند الضغط على GPS */}
                     <div>
                       <label className="block text-[11px] font-bold text-stone-700 mb-1">
                         {isAr ? "الشارع وتفاصيل المنزل *" : "Street / House Details *"}
