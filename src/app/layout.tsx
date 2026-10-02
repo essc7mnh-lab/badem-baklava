@@ -10,14 +10,14 @@ import { UserProvider } from "@/context/UserContext";
 
 const tajawal = Tajawal({
   subsets: ["arabic"],
-  weight: ["400", "700", "800"], // اختصرنا الأوزان على الأساسية فقط
+  weight: ["400", "700", "800"],
   variable: "--font-tajawal",
   display: "swap",
 });
 
 const playfair = Playfair_Display({
   subsets: ["latin"],
-  weight: ["600", "700"], // أوزان العناوين الإنجليزية فقط
+  weight: ["600", "700"],
   variable: "--font-playfair",
   display: "swap",
 });
@@ -28,36 +28,30 @@ export const metadata: Metadata = {
   title: {
     default: "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
     template: "%s | متجر بادَم للبقلاوة الفاخرة",
-    
   },
   verification: {
-  google: "AO44WoATQJhOSWwp6Gb8t1Kl5Yn0ktQguwHuZz04uj4",
-},
+    google: "AO44WoATQJhOSWwp6Gb8t1Kl5Yn0ktQguwHuZz04uj4",
+  },
   description:
     "أفخر أنواع البقلاوة التركية الفاخرة بأجود أنواع الفستق العنتابي والسمن البلدي الصافي. طازجة وتوصيل سريع لكافة مناطق الرياض.",
   keywords: [
     "بادم",
-    "متجر بادام",
+    "متجر بادم",
+    "بقلاوة بادم",
     "BADEM BAKLAVA",
-    "بقلاوة تركية",
-    "بقلاوة فستق",
+    "متجر بادام",
+    "بقلاوة تركية الرياض",
+    "بقلاوة فستق عنتابي",
     "حلويات تركية الرياض",
+    "متجر حلا الرياض",
+    "حلويات شارع التخصصي",
     "بقلاوة فاخرة السعودية",
     "طلب بقلاوة اونلاين",
     "أفضل بقلاوة في الرياض",
     "بوكس بقلاوة مشكل",
-
-    "بادم",
-    "بقلاوة بادم",
-    "متجر بادم",
-    "بقلاوة الرياض",
-    "متجر حلا الرياض",
-    "حلويات تركية الرياض",
-    "بقلاوة فستق عنتابي",
-    "حلويات شارع التخصصي",
-    "توصيل بقلاوة"
+    "توصيل بقلاوة الرياض"
   ],
- alternates: {
+  alternates: {
     canonical: "https://www.bademsa.com",
   },
   openGraph: {
@@ -72,7 +66,6 @@ export const metadata: Metadata = {
         height: 630,
         alt: "متجر بادَم للبقلاوة الفاخرة",
       },
-      
     ],
     locale: "ar_SA",
     type: "website",
@@ -80,7 +73,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
-    description: "أفخر أنواع البقلاوة التركية الطازجة في السعودية.",
+    description: "أفخر أنواع البقلاوة التركية الطازجة في الرياض.",
     images: ["https://www.bademsa.com/og-image.png"],
   },
   robots: {
@@ -101,35 +94,60 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // كود البيانات المهيكلة الرسمي لـ Google لظهور اسم المتجر وبيانات الفرع
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://www.bademsa.com/#website",
+        "url": "https://www.bademsa.com",
+        "name": "متجر بادَم للبقلاوة الفاخرة",
+        "alternateName": ["بادم", "بادم بقلاوة", "BADEM BAKLAVA", "Badem Baklava"],
+        "inLanguage": "ar"
+      },
+      {
+        "@type": "Bakery",
+        "@id": "https://www.bademsa.com/#store",
+        "name": "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
+        "image": "https://www.bademsa.com/og-image.png",
+        "description": "أفخر أنواع البقلاوة التركية الفاخرة بأجود أنواع الفستق العنتابي والسمن البلدي الصافي في الرياض.",
+        "url": "https://www.bademsa.com",
+        "telephone": "+966592320106",
+        "priceRange": "$$",
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "شارع التخصصي، حي المحمدية",
+          "addressLocality": "الرياض",
+          "addressRegion": "منطقة الرياض",
+          "addressCountry": "SA"
+        },
+        "geo": {
+          "@type": "GeoCoordinates",
+          "latitude": 24.7136,
+          "longitude": 46.6753
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.9",
+          "reviewCount": "128"
+        }
+      }
+    ]
+  };
+
   return (
     <html lang="ar" dir="rtl" className={`${tajawal.variable} ${playfair.variable}`}>
-      <body className="antialiased min-h-screen bg-[#F4ECE1] text-[#2D2321]">
-        {/* بيانات Schema المنظمة لمحركات البحث - مكانها المثالي هنا */}
+      <head>
+        {/* سكيما مدمجة ومعتمدة لظهور اسم الموقع في بحث Google */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "Store",
-              "name": "متجر بادَم للبقلاوة الفاخرة",
-              "image": "https://www.bademsa.com/logo.png",
-              "description": "أفخر أنواع البقلاوة التركية الفاخرة بأجود أنواع الفستق العنتابي والسمن البلدي في السعودية.",
-              "url": "https://www.bademsa.com",
-              "priceRange": "$$",
-              "telephone": "+966500000000",
-              "address": {
-                "@type": "PostalAddress",
-                "addressCountry": "SA",
-                "addressLocality": "Riyadh"
-              },
-              "aggregateRating": {
-                "@type": "AggregateRating",
-                "ratingValue": "4.9",
-                "reviewCount": "128"
-              }
-            })
+            __html: JSON.stringify(structuredData),
           }}
         />
+      </head>
+      <body className="antialiased min-h-screen bg-[#F4ECE1] text-[#2D2321]">
         <ToastProvider>
           <LanguageProvider>
             <UserProvider>
