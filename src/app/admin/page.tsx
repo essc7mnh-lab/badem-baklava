@@ -1087,7 +1087,7 @@ export default function AdminDashboard() {
                   <input
                     type="text"
                     required
-                    placeholder="بقلاوة بالفستق الملكي"
+                    placeholder="بقلاوة بالفستق "
                     value={newProd.title_ar}
                     onChange={(e) => handleProductNameArChange(e.target.value)}
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-bold"
@@ -1169,7 +1169,7 @@ export default function AdminDashboard() {
                   <div>
                     <span className="font-bold block text-stone-800">حالة التوفر بالمخزون:</span>
                     <span className="text-[10px] text-stone-500 font-medium">
-                      {newProd.is_available ? "متوفر للطلب الفوري 🟢" : "نفدت الكمية مؤقتاً 🔴"}
+                      {newProd.is_available ? "متوفر للطلب الفوري 🟢" : "نفذت الكمية مؤقتاً 🔴"}
                     </span>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1463,7 +1463,7 @@ export default function AdminDashboard() {
                         ) : (
                           <>
                             <EyeOff className="w-3 h-3 text-rose-600" />
-                            <span>نفدت الكمية 🔴</span>
+                            <span>نفذت الكمية 🔴</span>
                           </>
                         )}
                       </button>
@@ -1905,7 +1905,7 @@ export default function AdminDashboard() {
                     <Sparkles className="w-4 h-4 text-[#C59B27]" />
                   </div>
                   <p className="text-[11px] text-stone-500 mt-0.5">
-                    حدد عدد النقاط الملكية التي يكتسبها العميل تلقائياً عند إنفاق كل 1 ريال سعودي:
+                    حدد عدد النقاط  التي يكتسبها العميل تلقائياً عند إنفاق كل 1 ريال سعودي:
                   </p>
                 </div>
               </div>

@@ -110,7 +110,7 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
             <Image
               key={current.image_url}
               src={current.image_url}
-              alt="عرض بادَم الملكي"
+              alt="عرض بادَم "
               fill
               priority
               quality={92}

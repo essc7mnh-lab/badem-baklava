@@ -332,7 +332,7 @@ export default function Home() {
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-stone-400">
               <Loader2 className="w-8 h-8 animate-spin text-[#4A0E17]" />
               <p className="text-xs font-bold text-stone-600">
-                {isAr ? "جاري تحميل قائمة الحلويات الملكية..." : "Loading royal menu..."}
+                {isAr ? "جاري تحميل قائمة الحلويات ..." : "Loading royal menu..."}
               </p>
             </div>
           ) : filteredProducts.length === 0 ? (

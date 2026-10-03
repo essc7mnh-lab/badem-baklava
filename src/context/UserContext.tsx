@@ -315,7 +315,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
               pushNotification(
                 "✅ تم تسليم الطلب وإضافة النقاط!",
-                `تم تسليم طلبك بنجاح، وتمت إضافة ${earnedPts} نقطة مكافأة إلى رصيدك الملكي 🎉`,
+                `تم تسليم طلبك بنجاح، وتمت إضافة ${earnedPts} نقطة مكافأة إلى رصيدك  🎉`,
                 "points",
                 updated.id
               );

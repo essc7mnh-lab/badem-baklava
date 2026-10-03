@@ -42,7 +42,7 @@ export const BrandStoryMarquee: React.FC = () => {
 
   return (
     <div className="w-full py-1">
-      {/* 🌟 الكبسولة الملكية العائمة */}
+      {/* 🌟 الكبسولة  العائمة */}
       <div
         onClick={() => setIsPaused((prev) => !prev)}
         role="button"

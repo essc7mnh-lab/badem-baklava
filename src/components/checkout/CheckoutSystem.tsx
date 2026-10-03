@@ -432,7 +432,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
         : `🏪 *نوع الاستلام:* استلام شخصي من الفرع (مجاناً - 0.00 ر.س)\n• *الفرع:* فرع بادَم للحلويات الفاخرة`;
 
     const giftText = isGift
-      ? `\n🎁 *بيانات الإهداء الملكي:*\n• المهدَى إليه: ${recipientName || "غير محدد"}\n• رسالة البطاقة: "${giftMessage || "بدون رسالة"}"\n`
+      ? `\n🎁 *بيانات الإهداء :*\n• المهدَى إليه: ${recipientName || "غير محدد"}\n• رسالة البطاقة: "${giftMessage || "بدون رسالة"}"\n`
       : "";
 
     const notesText = notes ? `\n📝 *ملاحظات خاصة:* ${notes}\n` : "";
@@ -554,7 +554,7 @@ ${payMethodTitle}
           verifiedItems.push({
             title: cartItem.title,
             portion: cartItem.portionNote || cartItem.portion || "افتراضي",
-            portionNote: cartItem.portionNote || "الحجم الملكي",
+            portionNote: cartItem.portionNote || "الحجم ",
             quantity: cartItem.quantity,
             price: officialPrice,
           });
@@ -1313,7 +1313,7 @@ ${payMethodTitle}
                       3
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">التغليف الملكي الفاخر</h5>
+                      <h5 className="text-xs font-bold text-stone-900">التغليف الفاخر</h5>
                       <p className="text-[10px] text-stone-500">تغليف البوكس الحريري مع كرت الإهداء.</p>
                     </div>
                   </div>

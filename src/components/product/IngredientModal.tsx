@@ -375,17 +375,17 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 }`}
               />
 
-              {/* 🌟 شارة نفدت الكمية الملكية العائمة */}
+              {/* 🌟 شارة نفذت الكمية الملكية العائمة */}
               {isSoldOut && (
                 <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px] z-10 flex items-center justify-center p-4">
                   <div className="bg-[#4A0E17]/95 border border-[#C59B27]/60 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-center animate-in zoom-in-95">
                     <Clock className="w-4 h-4 text-[#E5C058] shrink-0 animate-pulse" />
                     <div>
                       <span className="text-xs sm:text-sm font-black text-amber-200 block">
-                        {isAr ? "نفدت الكمية مؤقتاً" : "Temporarily Sold Out"}
+                        {isAr ? "نفذت الكمية مؤقتاً" : "Temporarily Sold Out"}
                       </span>
                       <span className="text-[10px] sm:text-[11px] text-stone-200 font-medium">
-                        {isAr ? "نخبز دفعة طازجة قادمة قريباً من الفرن ✨" : "A fresh batch is baking soon in the oven"}
+                        {isAr ? "يتم إعداد دفعة جديدة" : "A fresh batch is baking soon in the oven"}
                       </span>
                     </div>
                   </div>
@@ -447,7 +447,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
           {hasWeights && (
             <div className="space-y-2">
               <label className="block text-xs font-black text-[#4A0E17]">
-                {isAr ? "اختر الوزن والتغليف الملكي:" : "Select Portion & Packaging:"}
+                {isAr ? "اختر الوزن والتغليف :" : "Select Portion & Packaging:"}
               </label>
               <div className="grid grid-cols-3 gap-2">
                 <button
@@ -532,7 +532,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               <div className="text-center py-8 bg-[#FAF5ED]/40 rounded-2xl border border-dashed border-stone-200 space-y-1.5">
                 <Star className="w-8 h-8 mx-auto text-[#C59B27]/50 stroke-1" />
                 <p className="text-xs font-bold text-stone-700">
-                  {isAr ? "كن أول من يقيم هذا الصنف الملكي!" : "Be the first to review this royal item!"}
+                  {isAr ? "كن أول من يقيم هذا الصنف !" : "Be the first to review this royal item!"}
                 </p>
                 <p className="text-[10px] text-stone-400">
                   {isAr ? "شاركنا انطباعك بعد التذوق أدناه." : "Share your experience below."}
@@ -672,7 +672,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               title={isAr ? "هذا الصنف غير متوفر حالياً" : "Currently out of stock"}
             >
               <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>{isAr ? "نفدت الكمية الملكية (انتظرونا قريباً)" : "Sold Out (Coming Soon)"}</span>
+              <span>{isAr ? "نفذت الكمية  (انتظرونا قريباً)" : "Sold Out (Coming Soon)"}</span>
             </div>
           ) : (
             <button

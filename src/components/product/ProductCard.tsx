@@ -119,12 +119,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           </div>
         )}
 
-        {/* شارة نفدت الكمية العائمة على الصورة من الخارج */}
+        {/* شارة نفذت الكمية العائمة على الصورة من الخارج */}
         {isSoldOut && (
           <div className="absolute inset-0 bg-black/30 backdrop-blur-[1.5px] z-10 flex items-center justify-center p-2">
             <span className="bg-[#4A0E17]/95 text-amber-200 border border-[#C59B27]/40 text-[10px] font-black px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
               <Clock className="w-3 h-3 text-[#E5C058] animate-pulse" />
-              <span>{language === "ar" ? "نفدت الكمية" : "Sold Out"}</span>
+              <span>{language === "ar" ? "نفذت الكمية" : "Sold Out"}</span>
             </span>
           </div>
         )}
@@ -171,7 +171,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
             type="button"
             disabled
             className="w-7 h-7 rounded-full bg-stone-200/90 text-stone-400 flex items-center justify-center border border-stone-300/80 cursor-not-allowed"
-            title={language === "ar" ? "نفدت الكمية مؤقتاً" : "Out of stock"}
+            title={language === "ar" ? "نفذت الكمية مؤقتاً" : "Out of stock"}
           >
             <Clock className="w-3.5 h-3.5" />
           </button>

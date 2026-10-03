@@ -173,7 +173,7 @@ export const ReviewsManager: React.FC = () => {
             <MessageSquare className="w-4 h-4 text-[#C59B27]" />
           </div>
           <div>
-            <h3 className="text-xs font-black text-stone-900">إدارة تعليقات وتقييمات العملاء الملكية</h3>
+            <h3 className="text-xs font-black text-stone-900">إدارة تعليقات وتقييمات العملاء </h3>
             <p className="text-[10px] text-stone-400 mt-0.5">متابعة ومراجعة آراء الذواقين والتحكم بها</p>
           </div>
         </div>
