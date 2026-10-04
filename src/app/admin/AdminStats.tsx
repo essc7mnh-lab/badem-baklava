@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { TrendingUp, ShoppingBag, Package, Tag, CalendarClock } from "lucide-react";
+import { formatCurrency } from "@/lib/orderPricing";
 
 interface AdminStatsProps {
   totalRevenue: number;
@@ -18,7 +19,7 @@ export const AdminStats: React.FC<AdminStatsProps> = ({
 }) => {
   const [currentDate, setCurrentDate] = useState<string>("");
 
-  // تهيئة التاريخ بشكل غير متزامن لتفادي خطأ Hydration وتجنب التنبيه
+  // تهيئة التاريخ بشكل غير متزامن لتفادي خطأ الـ Hydration
   useEffect(() => {
     const timer = setTimeout(() => {
       const formatted = new Date().toLocaleDateString("ar-SA", {
@@ -35,7 +36,7 @@ export const AdminStats: React.FC<AdminStatsProps> = ({
 
   return (
     <div className="space-y-3 select-none">
-      {/* شريط التاريخ الحي */}
+      {/* 📅 شريط التاريخ والربط الحي */}
       <div className="bg-white/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-stone-200/80 flex items-center justify-between text-xs font-bold text-stone-600 shadow-2xs">
         <div className="flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-[#C59B27] shrink-0" />
@@ -43,18 +44,18 @@ export const AdminStats: React.FC<AdminStatsProps> = ({
         </div>
         <span className="text-[10.5px] bg-emerald-50 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200/60 font-black flex items-center gap-1.5 shadow-2xs">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>النظام يعمل بلحظية تامة (Live)</span>
+          <span>المحرك المالي متصل ولحظي (Live)</span>
         </span>
       </div>
 
-      {/* بطاقات الإحصائيات الأربع */}
+      {/* 📊 بطاقات الإحصائيات الأربع المتناسقة */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        {/* 1. المبيعات */}
+        {/* 1. المبيعات الإجمالية */}
         <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 hover:border-[#4A0E17]/40 transition-all group">
-          <span className="text-[10px] text-stone-400 font-bold block">إجمالي المبيعات</span>
+          <span className="text-[10px] text-stone-400 font-bold block">إجمالي المبيعات الصافية</span>
           <div className="flex items-center justify-between gap-1">
             <span className="text-lg md:text-xl font-black text-[#4A0E17] font-mono tracking-tight truncate">
-              {Number(totalRevenue).toFixed(2)} <span className="text-xs font-bold font-sans">ر.س</span>
+              {formatCurrency(totalRevenue)}
             </span>
             <div className="w-9 h-9 rounded-2xl bg-[#4A0E17]/10 group-hover:scale-105 transition-transform flex items-center justify-center text-[#4A0E17] shadow-2xs shrink-0">
               <TrendingUp className="w-4 h-4" />
@@ -62,7 +63,7 @@ export const AdminStats: React.FC<AdminStatsProps> = ({
           </div>
         </div>
 
-        {/* 2. الطلبات */}
+        {/* 2. عدد الطلبات */}
         <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 hover:border-amber-500/40 transition-all group">
           <span className="text-[10px] text-stone-400 font-bold block">عدد الطلبات</span>
           <div className="flex items-center justify-between gap-1">

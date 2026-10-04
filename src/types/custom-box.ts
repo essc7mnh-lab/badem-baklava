@@ -3,6 +3,8 @@ export interface BoxTier {
   id: string;
   name_ar: string;
   name_en: string;
+  subtitle_ar?: string;
+  subtitle_en?: string;
   capacity: number; // إجمالي عدد القطع المسموح بها بدقة
   price: number;    // السعر الثابت
 }

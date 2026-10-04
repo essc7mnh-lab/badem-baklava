@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { 
-  ShoppingBag, Package, Tag, Printer, X, Download, 
-  CalendarClock, DollarSign, Phone, MapPin, User, Gift, ExternalLink, 
-  Trash2, Pencil, CheckCircle2, Loader2, Search, Filter, Truck, Store
+  ShoppingBag, Printer, X, Download, 
+  Phone, MapPin, User, Gift, ExternalLink, 
+  Trash2, Pencil, CheckCircle2, Loader2, Search, Filter, Truck, Store,
+  MessageCircle, Copy, Check
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
+import { calculateOrderFinancials, formatCurrency } from "@/lib/orderPricing";
+import { AdminStats } from "./AdminStats";
 
 export interface OrderItem {
   id?: string;
@@ -16,6 +19,7 @@ export interface OrderItem {
   portion?: string;
   portionNote?: string;
   image?: string;
+  [key: string]: unknown;
 }
 
 export interface AdminOrder {
@@ -55,51 +59,11 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
   const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<AdminOrder | null>(null);
   const [editingOrder, setEditingOrder] = useState<AdminOrder | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [todayFormattedDate, setTodayFormattedDate] = useState<string>("");
+  const [copiedCourierId, setCopiedCourierId] = useState<string | null>(null);
 
   // حالات البحث والتصفية السريعة
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-
-  // تهيئة التاريخ الحي
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const formatted = new Date().toLocaleDateString("ar-SA", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-      setTodayFormattedDate(formatted);
-    }, 0);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  // حساب المجموع الفرعي الدقيق للمنتجات
-  const calculateItemsSubtotal = (ord: AdminOrder): number => {
-    if (ord.subtotal !== undefined && ord.subtotal !== null && Number(ord.subtotal) > 0) {
-      return Number(ord.subtotal);
-    }
-    if (Array.isArray(ord.items) && ord.items.length > 0) {
-      return ord.items.reduce((sum, it) => sum + Number(it.price || 0) * Number(it.quantity || 1), 0);
-    }
-    const fee = Number(ord.delivery_fee ?? 35);
-    const disc = Number(ord.discount_amount || 0);
-    return Math.max(0, Number(ord.total_amount || 0) - fee + disc);
-  };
-
-  // استخراج رسوم التوصيل بدقة
-  const getOrderDeliveryFee = (ord: AdminOrder): number => {
-    if (ord.delivery_fee !== undefined && ord.delivery_fee !== null) {
-      return Number(ord.delivery_fee);
-    }
-    // إذا كان استلام من الفرع تكون الرسوم 0
-    if (ord.notes?.includes("[استلام من الفرع]") || ord.city?.includes("استلام")) {
-      return 0;
-    }
-    return 35;
-  };
 
   // تصفية الطلبات بناءً على البحث وحالة الطلب
   const filteredOrders = useMemo(() => {
@@ -120,7 +84,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     });
   }, [orders, statusFilter, searchQuery]);
 
-  // تحديث حالة الطلب السريعة
+  // تحديث حالة الطلب
   const handleUpdateOrderStatus = useCallback(async (orderId: string, status: string) => {
     try {
       const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
@@ -156,6 +120,8 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     setIsProcessing(true);
 
     try {
+      const financials = calculateOrderFinancials(editingOrder);
+
       const { error } = await supabase
         .from("orders")
         .update({
@@ -164,8 +130,8 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
           city: editingOrder.city?.trim() || "",
           district: editingOrder.district?.trim() || "",
           street: editingOrder.street?.trim() || "",
-          total_amount: Number(editingOrder.total_amount) || 0,
-          delivery_fee: Number(editingOrder.delivery_fee ?? 35),
+          total_amount: Number(editingOrder.total_amount) || financials.finalTotal,
+          delivery_fee: financials.deliveryFee,
           status: editingOrder.status || "pending",
           notes: editingOrder.notes || "",
         })
@@ -184,7 +150,55 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     }
   };
 
-  // تصدير ملف Excel بتنسيق XML/HTML يدعم العربية RTL بدقة
+  // 📋 نسخ بيانات الإرسال للمندوب بنقرة واحدة
+  const handleCopyCourierDetails = (ord: AdminOrder) => {
+    const fin = calculateOrderFinancials(ord);
+    const cleanPhone = (ord.customer_phone || "").trim();
+
+    let gpsLink = "";
+    if (ord.notes && ord.notes.includes("https://")) {
+      const match = ord.notes.split(" ").find((w) => w.startsWith("https://"));
+      if (match) gpsLink = match;
+    }
+
+    const dispatchText = `📦 *طلب توصيل جديد - متجر بادَم BADEM*
+━━━━━━━━━━━━━━━━━━━
+🆔 *رقم الطلب:* #${ord.id}
+👤 *العميل:* ${ord.customer_name || "عميل بادَم"}
+📱 *الجوال:* ${cleanPhone}
+📍 *العنوان:* ${ord.city || "الرياض"} - ${ord.district || ""} ${ord.street ? `(${ord.street})` : ""}
+${gpsLink ? `🗺️ *رابط اللوكيشن GPS:*\n${gpsLink}\n` : ""}💰 *المطلوب تحصيله:* ${formatCurrency(fin.finalTotal)}
+💳 *طريقة الدفع:* ${ord.payment_method || "تحويل بنكي"}
+━━━━━━━━━━━━━━━━━━━`;
+
+    navigator.clipboard.writeText(dispatchText);
+    setCopiedCourierId(ord.id);
+    setTimeout(() => setCopiedCourierId(null), 2500);
+  };
+
+  // 💬 مراسلة العميل بالواتساب المباشر وفق حالة الطلب
+  const handleOpenCustomerWhatsApp = (ord: AdminOrder) => {
+    if (!ord.customer_phone) return;
+    const cleanPhone = ord.customer_phone.replace(/[^0-9]/g, "");
+    const formattedPhone = cleanPhone.startsWith("05")
+      ? `966${cleanPhone.slice(1)}`
+      : cleanPhone.startsWith("5")
+      ? `966${cleanPhone}`
+      : cleanPhone;
+
+    const statusMessages: Record<string, string> = {
+      pending: `مرحباً أستاذ ${ord.customer_name || ""}، تم استلام طلبك رقم (#${ord.id}) بنجاح في متجر بادَم للبقلاوة الفاخرة ✨ سيتم البدء في تجهيزه حالاً.`,
+      baking: `مرحباً أستاذ ${ord.customer_name || ""}، طلبك رقم (#${ord.id}) يخبز ويجهز الآن طازجاً في الفرن بالسمن البلدي والفستق العنتابي الفاخر 🔥`,
+      delivering: `مرحباً أستاذ ${ord.customer_name || ""}، طلبك الفاخر رقم (#${ord.id}) خرج الآن مع المندوب وهو في طريقه لعنوانكم 🚚📍`,
+      completed: `مرحباً أستاذ ${ord.customer_name || ""}، نرجو أن تكون قد استمتعت بطلبك من بادَم (#${ord.id})! بالعافية ونسعد بخدمتك دائماً 👑`,
+    };
+
+    const text = statusMessages[ord.status || "pending"] || statusMessages.pending;
+    const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  };
+
+  // تصدير ملف Excel مدقق محاسبياً
   const exportOrdersToExcel = () => {
     if (orders.length === 0) {
       alert("لا توجد طلبات مسجلة لتصديرها حالياً.");
@@ -192,9 +206,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     }
 
     const tableRows = orders.map((o) => {
-      const itemsSub = calculateItemsSubtotal(o);
-      const fee = getOrderDeliveryFee(o);
-      const disc = Number(o.discount_amount || 0);
+      const fin = calculateOrderFinancials(o);
 
       return `
       <tr>
@@ -207,10 +219,10 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         <td style="text-align: right;">${o.street || ""}</td>
         <td style="text-align: center;">${o.payment_method || ""}</td>
         <td style="text-align: center; font-weight: bold;">${o.status || ""}</td>
-        <td style="text-align: center;">${itemsSub.toFixed(2)}</td>
-        <td style="text-align: center;">${disc.toFixed(2)}</td>
-        <td style="text-align: center;">${fee.toFixed(2)}</td>
-        <td style="text-align: center; font-weight: bold; color: #4A0E17;">${Number(o.total_amount || 0).toFixed(2)}</td>
+        <td style="text-align: center;">${fin.subtotal.toFixed(2)}</td>
+        <td style="text-align: center;">${fin.discount.toFixed(2)}</td>
+        <td style="text-align: center;">${fin.deliveryFee.toFixed(2)}</td>
+        <td style="text-align: center; font-weight: bold; color: #4A0E17;">${fin.finalTotal.toFixed(2)}</td>
         <td style="text-align: right;">${o.notes || ""}</td>
       </tr>
       `;
@@ -280,7 +292,12 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+  const totalRevenue = useMemo(() => {
+    return orders.reduce((sum, o) => {
+      const fin = calculateOrderFinancials(o);
+      return sum + fin.finalTotal;
+    }, 0);
+  }, [orders]);
 
   // شارة مظهر حالة الطلب
   const getStatusBadge = (status?: string) => {
@@ -300,70 +317,15 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
   return (
     <div className="space-y-6 select-none">
       
-      {/* 📅 شريط التاريخ والوقت الحي */}
-      <div className="bg-white px-5 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between text-xs font-bold text-stone-700 shadow-2xs">
-        <div className="flex items-center gap-2">
-          <CalendarClock className="w-4 h-4 text-[#C59B27] shrink-0" />
-          <span className="min-h-4">{todayFormattedDate}</span>
-        </div>
-        <span className="text-[10.5px] bg-emerald-50 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200/60 font-black flex items-center gap-1.5 shadow-2xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>الربط اللحظي مفعل (Live)</span>
-        </span>
-      </div>
+      {/* 📊 الإحصائيات وشريط التاريخ الحي الموحد (تم استدعاؤها عبر AdminStats) */}
+      <AdminStats
+        totalRevenue={totalRevenue}
+        ordersCount={orders.length}
+        productsCount={productsCount}
+        couponsCount={couponsCount}
+      />
 
-      {/* 📊 بطاقات الإحصائيات */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
-          <span className="text-[10px] text-stone-400 font-bold block">إجمالي المبيعات</span>
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-lg md:text-xl font-black text-[#4A0E17] font-mono tracking-tight truncate">
-              {totalRevenue.toFixed(2)} <span className="text-xs font-bold font-sans">ر.س</span>
-            </span>
-            <div className="w-9 h-9 rounded-2xl bg-[#4A0E17]/10 flex items-center justify-center text-[#4A0E17] shrink-0">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
-          <span className="text-[10px] text-stone-400 font-bold block">عدد الطلبات</span>
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
-              {orders.length} <span className="text-xs font-bold font-sans">طلب</span>
-            </span>
-            <div className="w-9 h-9 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-700 shrink-0">
-              <ShoppingBag className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
-          <span className="text-[10px] text-stone-400 font-bold block">الأصناف المعروضة</span>
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
-              {productsCount} <span className="text-xs font-bold font-sans">صنف</span>
-            </span>
-            <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-700 shrink-0">
-              <Package className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
-          <span className="text-[10px] text-stone-400 font-bold block">الكوبونات النشطة</span>
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
-              {couponsCount} <span className="text-xs font-bold font-sans">كود</span>
-            </span>
-            <div className="w-9 h-9 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-700 shrink-0">
-              <Tag className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 🔍 شريط البحث والتصفية وتصدير Excel */}
+      {/* 🔍 شريط البحث والتصفية المتقدم وتصدير Excel */}
       <div className="bg-white p-4 sm:p-5 rounded-3xl border border-stone-200/80 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           
@@ -426,7 +388,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         </div>
       </div>
 
-      {/* 📋 قائمة الطلبات مع التفصيل المالي الشفاف */}
+      {/* 📋 قائمة الطلبات مع التفصيل المالي وأزرار العمليات السريعة */}
       <div className="space-y-4">
         {filteredOrders.length === 0 ? (
           <div className="bg-white p-12 text-center rounded-3xl border border-stone-200 text-stone-400 shadow-2xs space-y-2">
@@ -445,10 +407,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         ) : (
           filteredOrders.map((ord) => {
             const badge = getStatusBadge(ord.status);
-            const itemsSubtotal = calculateItemsSubtotal(ord);
-            const deliveryFee = getOrderDeliveryFee(ord);
-            const discount = Number(ord.discount_amount || 0);
-            const isPickup = ord.notes?.includes("[استلام من الفرع]") || ord.city?.includes("استلام");
+            const fin = calculateOrderFinancials(ord);
 
             return (
               <div key={ord.id} className="bg-white rounded-3xl border border-stone-200/90 shadow-2xs overflow-hidden transition hover:border-[#4A0E17]/30">
@@ -466,12 +425,12 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
                     {/* نوع الاستلام */}
                     <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                      isPickup 
+                      fin.isPickup 
                         ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
                         : "bg-blue-50 text-blue-800 border-blue-200"
                     }`}>
-                      {isPickup ? <Store className="w-3 h-3" /> : <Truck className="w-3 h-3" />}
-                      <span>{isPickup ? "استلام من الفرع" : "توصيل للمنزل"}</span>
+                      {fin.isPickup ? <Store className="w-3 h-3" /> : <Truck className="w-3 h-3" />}
+                      <span>{fin.isPickup ? "استلام من الفرع" : "توصيل للمنزل"}</span>
                     </span>
 
                     {ord.is_gift && (
@@ -486,7 +445,47 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     </span>
                   </div>
 
+                  {/* أزرار العمليات السريعة */}
                   <div className="flex items-center flex-wrap gap-2">
+                    
+                    {/* 1. زر مراسلة العميل بالواتساب */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCustomerWhatsApp(ord)}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
+                      title="مراسلة العميل بالواتساب بحالة الطلب"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>واتساب</span>
+                    </button>
+
+                    {/* 2. زر نسخ بيانات المندوب */}
+                    {!fin.isPickup && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCourierDetails(ord)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95 border ${
+                          copiedCourierId === ord.id
+                            ? "bg-emerald-600 text-white border-emerald-600"
+                            : "bg-[#FAF5ED] hover:bg-amber-100/60 text-amber-900 border-amber-200"
+                        }`}
+                        title="نسخ ملخص كامل لإرساله للمندوب"
+                      >
+                        {copiedCourierId === ord.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-white" />
+                            <span>تم النسخ!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-[#C59B27]" />
+                            <span>بيانات المندوب</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* زر تعديل الطلب */}
                     <button
                       type="button"
                       onClick={() => setEditingOrder({ ...ord })}
@@ -496,6 +495,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                       <span>تعديل</span>
                     </button>
 
+                    {/* زر طباعة الفاتورة */}
                     <button 
                       type="button"
                       onClick={() => setSelectedOrderForPrint(ord)} 
@@ -505,6 +505,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                       <span>طباعة</span>
                     </button>
 
+                    {/* زر حذف الطلب */}
                     <button
                       type="button"
                       onClick={() => handleDeleteOrder(ord.id)}
@@ -514,6 +515,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                       <span>حذف</span>
                     </button>
 
+                    {/* تغيير حالة الطلب */}
                     <select
                       value={ord.status || "pending"}
                       onChange={(e) => handleUpdateOrderStatus(ord.id, e.target.value)}
@@ -568,7 +570,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     <div className="bg-amber-50/90 border border-amber-200/80 p-3.5 rounded-2xl text-xs space-y-1.5">
                       <span className="font-bold text-amber-900 flex items-center gap-1.5">
                         <Gift className="w-4 h-4 text-amber-700" />
-                        <span>بيانات كرت الإهداء :</span>
+                        <span>بيانات كرت الإهداء الملكي:</span>
                       </span>
                       {ord.recipient_name && (
                         <p className="text-stone-700"><strong>اسم المُهدى إليه:</strong> {ord.recipient_name}</p>
@@ -593,7 +595,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                             </span>
                             <div>
                               <span className="font-bold text-stone-800 block">{it.title}</span>
-                              <span className="text-[10px] text-stone-400">{it.portion || it.portionNote || "الحجم القياسي "}</span>
+                              <span className="text-[10px] text-stone-400">{it.portion || it.portionNote || "الحجم القياسي الملكي"}</span>
                             </div>
                           </div>
                           <span className="font-black text-[#4A0E17] font-mono">
@@ -613,27 +615,26 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   )}
                 </div>
 
-                {/* 🌟 ذيل البطاقة: تفصيل مالي احترافي ودقيق 100% */}
+                {/* 🌟 ذيل البطاقة: تفصيل مالي احترافي ودقيق 100% مستند للمحرك المالي */}
                 <div className="bg-[#FAF5ED]/90 px-6 py-4 border-t border-stone-200/70 space-y-2.5 text-xs">
                   
-                  {/* شريط التفصيل المحاسبي */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 pb-2 border-b border-stone-200/60 text-stone-600">
                     <div>
                       <span className="block text-[10px] text-stone-400">قيمة الأصناف:</span>
-                      <span className="font-bold font-mono text-stone-800">{itemsSubtotal.toFixed(2)} ر.س</span>
+                      <span className="font-bold font-mono text-stone-800">{formatCurrency(fin.subtotal)}</span>
                     </div>
 
                     <div>
                       <span className="block text-[10px] text-stone-400">رسوم التوصيل:</span>
-                      <span className={`font-bold font-mono ${deliveryFee > 0 ? "text-[#4A0E17]" : "text-emerald-700"}`}>
-                        {deliveryFee > 0 ? `${deliveryFee.toFixed(2)} ر.س` : "مجاناً (0.00 ر.س)"}
+                      <span className={`font-bold font-mono ${fin.deliveryFee > 0 ? "text-[#4A0E17]" : "text-emerald-700"}`}>
+                        {fin.deliveryFee > 0 ? formatCurrency(fin.deliveryFee) : "مجاناً (0.00 ر.س)"}
                       </span>
                     </div>
 
                     <div>
                       <span className="block text-[10px] text-stone-400">الخصم المطبق:</span>
-                      <span className={`font-bold font-mono ${discount > 0 ? "text-emerald-700" : "text-stone-400"}`}>
-                        {discount > 0 ? `- ${discount.toFixed(2)} ر.س` : "لا يوجد"}
+                      <span className={`font-bold font-mono ${fin.discount > 0 ? "text-emerald-700" : "text-stone-400"}`}>
+                        {fin.discount > 0 ? `- ${formatCurrency(fin.discount)}` : "لا يوجد"}
                       </span>
                     </div>
 
@@ -643,11 +644,10 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     </div>
                   </div>
 
-                  {/* سطر الإجمالي النهائي */}
                   <div className="flex items-center justify-between pt-0.5">
                     <span className="font-bold text-stone-700">المبلغ الصافي المطلوب تحصيله:</span>
                     <span className="text-lg font-black text-[#4A0E17] font-mono">
-                      {Number(ord.total_amount || 0).toFixed(2)} ر.س
+                      {formatCurrency(fin.finalTotal)}
                     </span>
                   </div>
 
@@ -797,9 +797,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
       {/* 🖨️ نافذة طباعة الفاتورة الفاخرة */}
       {selectedOrderForPrint && (() => {
-        const printSubtotal = calculateItemsSubtotal(selectedOrderForPrint);
-        const printFee = getOrderDeliveryFee(selectedOrderForPrint);
-        const printDiscount = Number(selectedOrderForPrint.discount_amount || 0);
+        const printFin = calculateOrderFinancials(selectedOrderForPrint);
 
         return (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static">
@@ -845,30 +843,30 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 </div>
               </div>
 
-              {/* الملخص المالي المحاسبي الدقيق في الفاتورة */}
+              {/* الملخص المالي المحاسبي الدقيق في الفاتورة عبر المحرك المالي */}
               <div className="border-t border-stone-200 pt-4 space-y-1.5 text-xs">
                 <div className="flex justify-between text-stone-600">
                   <span>قيمة المنتجات:</span>
-                  <span className="font-mono font-bold">{printSubtotal.toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold">{formatCurrency(printFin.subtotal)}</span>
                 </div>
 
                 <div className="flex justify-between text-stone-600">
                   <span>رسوم التوصيل:</span>
                   <span className="font-mono font-bold">
-                    {printFee > 0 ? `${printFee.toFixed(2)} ر.س` : "مجاناً (0.00 ر.س)"}
+                    {printFin.deliveryFee > 0 ? formatCurrency(printFin.deliveryFee) : "مجاناً (0.00 ر.س)"}
                   </span>
                 </div>
 
-                {printDiscount > 0 && (
+                {printFin.discount > 0 && (
                   <div className="flex justify-between text-emerald-700 font-bold">
                     <span>الخصم المطبق:</span>
-                    <span className="font-mono">- {printDiscount.toFixed(2)} ر.س</span>
+                    <span className="font-mono">- {formatCurrency(printFin.discount)}</span>
                   </div>
                 )}
 
                 <div className="flex justify-between items-center text-base font-black text-[#4A0E17] pt-2 border-t border-stone-200">
                   <span>المبلغ الإجمالي النهائي:</span>
-                  <span className="font-mono">{Number(selectedOrderForPrint.total_amount || 0).toFixed(2)} ر.س</span>
+                  <span className="font-mono">{formatCurrency(printFin.finalTotal)}</span>
                 </div>
               </div>
 

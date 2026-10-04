@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Tag,
 } from "lucide-react";
 import { Product } from "@/types";
 import { useLanguage } from "@/context/LanguageContext";
@@ -23,8 +24,22 @@ import { useToast } from "@/context/ToastContext";
 import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase/supabase";
 
-// واجهة متكاملة تجمع صيغ الفرونت إند وقاعدة البيانات معاً لمنع أخطاء TypeScript
-export interface ExtendedProduct extends Product {
+export interface WeightPrices {
+  quarter?: number | string;
+  half?: number | string;
+  kilo?: number | string;
+}
+
+export type ExtendedProduct = Omit<
+  Product,
+  | "price"
+  | "base_price"
+  | "images"
+  | "image_urls"
+  | "image_url"
+  | "description_ar"
+  | "description_en"
+> & {
   images?: string[];
   image_urls?: string[];
   image_url?: string;
@@ -33,13 +48,18 @@ export interface ExtendedProduct extends Product {
   isOutOfStock?: boolean;
   base_price?: number | string;
   price?: number | string;
+  original_price?: number | string;
+  originalPrice?: number | string;
+  compare_at_price?: number | string;
+  weight_prices?: WeightPrices | null;
+  weightPrices?: WeightPrices | null;
   title_ar?: string;
   title_en?: string;
   description_ar?: string | null;
   description_en?: string | null;
   has_weights?: boolean;
-  hasWeights?: boolean ;
-}
+  hasWeights?: boolean;
+};
 
 interface IngredientModalProps {
   product: ExtendedProduct | null;
@@ -63,6 +83,8 @@ interface IngredientObject {
   name_en?: string;
 }
 
+type PortionType = "quarter" | "half" | "kilo";
+
 export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClose }) => {
   const { language, t } = useLanguage();
   const isAr = language === "ar";
@@ -71,16 +93,15 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const { userName, userPhone } = useUser();
   const reviewInputId = useId();
 
-  // مؤشر الصورة الحالية
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  // التحقق من تفعيل خيارات الأوزان (الافتراضي مفعل للبقلاوة)
   const hasWeights = product?.has_weights !== false && product?.hasWeights !== false;
 
-  const [multiplier, setMultiplier] = useState(1);
+  const [selectedPortion, setSelectedPortion] = useState<PortionType>("quarter");
   const [selectedWeightLabel, setSelectedWeightLabel] = useState(
     isAr ? "ربع كيلو (250g)" : "250g Quarter"
   );
+
   const [userRating, setUserRating] = useState(5);
   const [newComment, setNewComment] = useState("");
   const [reviewerName, setReviewerName] = useState("");
@@ -89,7 +110,75 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  // استخراج قائمة الصور
+  const initialWeights = useMemo<WeightPrices | null>(() => {
+    const raw = product?.weight_prices ?? product?.weightPrices;
+    if (!raw) return null;
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    return raw as WeightPrices;
+  }, [product]);
+
+  const [liveWeightPrices, setLiveWeightPrices] = useState<WeightPrices | null>(initialWeights);
+  const [liveOriginalPrice, setLiveOriginalPrice] = useState<number>(
+    Number(product?.original_price ?? product?.originalPrice ?? product?.compare_at_price ?? 0)
+  );
+
+  // جلب الأسعار المحدثة من Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        setLiveWeightPrices(initialWeights);
+        setLiveOriginalPrice(
+          Number(product?.original_price ?? product?.originalPrice ?? product?.compare_at_price ?? 0)
+        );
+      }
+    }, 0);
+
+    if (!product?.id) {
+      return () => {
+        isMounted = false;
+        clearTimeout(timer);
+      };
+    }
+
+    const fetchFreshPrices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("products")
+          .select("weight_prices, base_price, original_price")
+          .eq("id", product.id)
+          .maybeSingle();
+
+        if (isMounted && data && !error) {
+          if (data.weight_prices) {
+            const parsed = typeof data.weight_prices === "string"
+              ? JSON.parse(data.weight_prices)
+              : data.weight_prices;
+            setLiveWeightPrices(parsed);
+          }
+          if (data.original_price !== undefined && data.original_price !== null) {
+            setLiveOriginalPrice(Number(data.original_price));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch fresh weight prices:", err);
+      }
+    };
+
+    void fetchFreshPrices();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [product?.id, initialWeights, product?.original_price, product?.originalPrice, product?.compare_at_price]);
+
   const imagesList = useMemo<string[]>(() => {
     if (!product) return ["/hero-baklava.png"];
 
@@ -109,13 +198,54 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     product?.is_out_of_stock === true
   );
 
-  // إعادة ضبط الحالة بشكل غير متزامن لتفادي أخطاء React
+  // الأسعار الحالية
+  const singleBasePrice = Number(product?.base_price ?? product?.price ?? product?.basePrice ?? 0);
+  const quarterPrice = Number(liveWeightPrices?.quarter ?? singleBasePrice);
+  const halfPrice = Number(liveWeightPrices?.half ?? (liveWeightPrices?.quarter ?? singleBasePrice));
+  const kiloPrice = Number(liveWeightPrices?.kilo ?? (liveWeightPrices?.quarter ?? singleBasePrice));
+
+  const currentPrice = useMemo(() => {
+    if (!hasWeights) return singleBasePrice;
+    if (selectedPortion === "half") return halfPrice;
+    if (selectedPortion === "kilo") return kiloPrice;
+    return quarterPrice;
+  }, [hasWeights, singleBasePrice, selectedPortion, quarterPrice, halfPrice, kiloPrice]);
+
+  // -------------------------------------------------------------
+  // 🌟 [المكان 1]: الحسابات الهندسية للخصم والتوفير
+  // -------------------------------------------------------------
+  const hasDiscount = liveOriginalPrice > quarterPrice && quarterPrice > 0;
+
+  // نسبة الخصم المئوية الموحدة (مثال: 25%)
+  const discountPercentage = useMemo(() => {
+    if (!hasDiscount) return 0;
+    return Math.round(((liveOriginalPrice - quarterPrice) / liveOriginalPrice) * 100);
+  }, [hasDiscount, liveOriginalPrice, quarterPrice]);
+
+  // معامل التناسب لحساب السعر المشطوب لبقية الأوزان بدقة
+  const discountMultiplier = useMemo(() => {
+    if (!hasDiscount) return 1;
+    return liveOriginalPrice / quarterPrice;
+  }, [hasDiscount, liveOriginalPrice, quarterPrice]);
+
+  // الأسعار المشطوبة لكل وزن
+  const quarterOriginalPrice = liveOriginalPrice;
+  const halfOriginalPrice = Math.round(halfPrice * discountMultiplier);
+  const kiloOriginalPrice = Math.round(kiloPrice * discountMultiplier);
+
+  // السعر المشطوب للوزن المختار حالياً
+  const currentOriginalPrice = useMemo(() => {
+    if (!hasDiscount) return null;
+    return Math.round(currentPrice * discountMultiplier);
+  }, [hasDiscount, currentPrice, discountMultiplier]);
+  // -------------------------------------------------------------
+
   useEffect(() => {
     if (!product?.id) return;
 
     const resetTimer = setTimeout(() => {
       setCurrentImageIndex(0);
-      setMultiplier(1);
+      setSelectedPortion("quarter");
       setSelectedWeightLabel(
         hasWeights
           ? (isAr ? "ربع كيلو (250g)" : "250g Quarter")
@@ -129,7 +259,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     return () => clearTimeout(resetTimer);
   }, [product?.id, isAr, hasWeights]);
 
-  // إغلاق النافذة بزر Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -138,7 +267,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  // جلب تقييمات المنتج
   useEffect(() => {
     if (!product?.id) return;
     let isMounted = true;
@@ -168,13 +296,12 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
     return () => {
       isMounted = false;
-  clearTimeout(timer);    }; 
+      clearTimeout(timer);
+    };
   }, [product?.id]);
 
   if (!product) return null;
 
-  const basePrice = Number(product.basePrice ?? product.base_price ?? product.price ?? 0);
-  const currentPrice = hasWeights ? basePrice * multiplier : basePrice;
   const productTitleAr = product.titleAr || product.title_ar || "صنف فاخر";
   const productTitleEn = product.titleEn || product.title_en || "Signature Item";
   const productDescAr = product.descriptionAr || product.description_ar;
@@ -198,8 +325,8 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     setCurrentImageIndex((prev) => (prev === imagesList.length - 1 ? 0 : prev + 1));
   };
 
-  const handleSelectPortion = (mult: number, labelAr: string, labelEn: string) => {
-    setMultiplier(mult);
+  const handleSelectPortion = (portion: PortionType, labelAr: string, labelEn: string) => {
+    setSelectedPortion(portion);
     setSelectedWeightLabel(isAr ? labelAr : labelEn);
   };
 
@@ -231,7 +358,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     if (!finalName || !finalPhone) {
       showToast(
         isAr
-          ? "يرجى تسجيل اسمك ورقم هاتفك (من ملفك الشخصي) للمشاركة بالتقييم"
+          ? "يرجى تسجيل اسمك ورقم هاتفك للمشاركة بالتقييم"
           : "Please update your profile name and phone first",
         "error"
       );
@@ -301,7 +428,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
       aria-modal="true"
       aria-label={isAr ? productTitleAr : productTitleEn}
     >
-      {/* خلفية الإغلاق */}
       <div
         className="absolute inset-0 cursor-pointer"
         onClick={onClose}
@@ -310,7 +436,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
       <div className="bg-[#FAF5ED] w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl border border-[#4A0E17]/20 max-h-[92vh] flex flex-col relative z-10 text-[#2D2321] animate-in zoom-in-95 duration-200">
         
-        {/* الترويسة الملكية */}
+        {/* الترويسة */}
         <div className="relative bg-[#4A0E17] text-white text-center pt-6 pb-4 px-4 border-b border-[#C59B27]/30 shadow-xs">
           <button
             type="button"
@@ -335,7 +461,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
         {/* المحتوى الداخلي */}
         <div className="overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-5 flex-1 overscroll-contain">
           
-          {/* 1. تفكيك المكونات الطبيعية */}
+          {/* المكونات الطبيعية */}
           {productIngredients.length > 0 && (
             <section className="space-y-2" aria-label="Ingredients">
               <div className="text-center text-xs text-[#4A0E17] font-bold flex items-center justify-center gap-1.5">
@@ -359,9 +485,8 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </section>
           )}
 
-          {/* 2. بطاقة الصورة الكبيرة المتجاوبة مع السلايدر */}
+          {/* الصورة */}
           <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-2xs border border-stone-200/90 flex flex-col items-center">
-            
             <div className="relative w-full aspect-4/3 sm:aspect-16/10 rounded-2xl overflow-hidden shadow-sm border border-stone-200/60 bg-[#F7F2EB] group">
               <Image
                 src={imagesList[currentImageIndex] || "/hero-baklava.png"}
@@ -375,7 +500,14 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 }`}
               />
 
-              {/* 🌟 شارة نفذت الكمية الملكية العائمة */}
+              {/* شارة الخصم العائمة على الصورة إن وجد */}
+              {hasDiscount && (
+                <div className="absolute top-3 right-3 z-20 bg-[#4A0E17]/90 text-[#E5C058] border border-[#E5C058]/40 px-3 py-1 rounded-full text-xs font-black shadow-lg flex items-center gap-1">
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>خصم {discountPercentage}%</span>
+                </div>
+              )}
+
               {isSoldOut && (
                 <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px] z-10 flex items-center justify-center p-4">
                   <div className="bg-[#4A0E17]/95 border border-[#C59B27]/60 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-center animate-in zoom-in-95">
@@ -392,7 +524,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 </div>
               )}
 
-              {/* أسهم التنقل بين الصور */}
               {imagesList.length > 1 && (
                 <>
                   <button
@@ -413,7 +544,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                     <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </button>
 
-                  {/* شريط النقاط السفلية */}
                   <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20 bg-black/40 backdrop-blur-xs px-2.5 py-1 rounded-full border border-white/10 shadow-xs">
                     {imagesList.map((_, idx) => (
                       <button
@@ -443,56 +573,107 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             )}
           </div>
 
-          {/* 3. خيارات الوزن والتغليف (تظهر فقط إذا كان المنتج يدعم الأوزان) */}
+          {/* ------------------------------------------------------------- */}
+          {/* 🌟 [المكان 2]: خيارات الأوزان مع الأسعار المشطوبة والشارات */}
+          {/* ------------------------------------------------------------- */}
           {hasWeights && (
             <div className="space-y-2">
-              <label className="block text-xs font-black text-[#4A0E17]">
-                {isAr ? "اختر الوزن والتغليف :" : "Select Portion & Packaging:"}
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-black text-[#4A0E17]">
+                  {isAr ? "اختر الوزن والتغليف :" : "Select Portion & Packaging:"}
+                </label>
+                {hasDiscount ? (
+                  <span className="text-[10px] text-amber-700 bg-amber-100/70 border border-amber-200 px-2 py-0.5 rounded-full font-black">
+                    عرض سارٍ: وفر {discountPercentage}% 🔥
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-stone-500 font-bold">
+                    {isAr ? "أسعار معتمدة ومحددة ⚖️" : "Official Pricing"}
+                  </span>
+                )}
+              </div>
+
               <div className="grid grid-cols-3 gap-2">
+                {/* 1. ربع كيلو (250g) */}
                 <button
                   type="button"
-                  onClick={() => handleSelectPortion(1, "ربع كيلو (250g)", "250g Quarter")}
-                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                    multiplier === 1
-                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
+                  onClick={() => handleSelectPortion("quarter", "ربع كيلو (250g)", "250g Quarter")}
+                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer relative ${
+                    selectedPortion === "quarter"
+                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs ring-1 ring-[#4A0E17]/10"
                       : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
                   }`}
                 >
                   <span className="block text-xs font-black">{t("portionQuarter")}</span>
-                  <span className="text-[10px] text-stone-400 block mt-0.5">8 - 10 قطع</span>
+                  
+                  {/* إظهار السعر المشطوب إن وجد خصم */}
+                  {hasDiscount && (
+                    <span className="text-[10px] line-through text-stone-400 font-mono block mt-1">
+                      {quarterOriginalPrice} ر.س
+                    </span>
+                  )}
+                  
+                  <span className={`text-sm font-mono font-black text-[#4A0E17] block ${hasDiscount ? "mt-0" : "mt-1"}`}>
+                    {quarterPrice.toFixed(0)} ر.س
+                  </span>
+                  <span className="text-[9.5px] text-stone-400 block mt-0.5">8 - 10 قطع</span>
                 </button>
 
+                {/* 2. نصف كيلو (500g) */}
                 <button
                   type="button"
-                  onClick={() => handleSelectPortion(1.85, "نصف كيلو (500g)", "500g Half")}
-                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                    multiplier === 1.85
-                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
+                  onClick={() => handleSelectPortion("half", "نصف كيلو (500g)", "500g Half")}
+                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer relative ${
+                    selectedPortion === "half"
+                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs ring-1 ring-[#4A0E17]/10"
                       : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
                   }`}
                 >
                   <span className="block text-xs font-black">{t("portionHalf")}</span>
-                  <span className="text-[10px] text-stone-400 block mt-0.5">16 - 20 قطعة</span>
+
+                  {/* إظهار السعر المشطوب إن وجد خصم */}
+                  {hasDiscount && (
+                    <span className="text-[10px] line-through text-stone-400 font-mono block mt-1">
+                      {halfOriginalPrice} ر.س
+                    </span>
+                  )}
+
+                  <span className={`text-sm font-mono font-black text-[#4A0E17] block ${hasDiscount ? "mt-0" : "mt-1"}`}>
+                    {halfPrice.toFixed(0)} ر.س
+                  </span>
+                  <span className="text-[9.5px] text-stone-400 block mt-0.5">16 - 20 قطعة</span>
                 </button>
 
+                {/* 3. واحد كيلو فاخر (1000g) */}
                 <button
                   type="button"
-                  onClick={() => handleSelectPortion(3.5, "1 كجم فاخر (صندوق خشبي)", "1 Kg Royal Box")}
-                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                    multiplier === 3.5
-                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
+                  onClick={() => handleSelectPortion("kilo", "1 كجم فاخر (صندوق خشبي)", "1 Kg Royal Box")}
+                  className={`p-3 rounded-2xl text-center transition-all border cursor-pointer relative ${
+                    selectedPortion === "kilo"
+                      ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs ring-1 ring-[#4A0E17]/10"
                       : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
                   }`}
                 >
                   <span className="block text-xs font-black">{t("portionKilo")}</span>
-                  <span className="text-[10px] text-[#C59B27] font-black block mt-0.5">بوكس إهداء فاخر</span>
+
+                  {/* إظهار السعر المشطوب إن وجد خصم */}
+                  {hasDiscount && (
+                    <span className="text-[10px] line-through text-stone-400 font-mono block mt-1">
+                      {kiloOriginalPrice} ر.س
+                    </span>
+                  )}
+
+                  <span className={`text-sm font-mono font-black text-[#4A0E17] block ${hasDiscount ? "mt-0" : "mt-1"}`}>
+                    {kiloPrice.toFixed(0)} ر.س
+                  </span>
+                  <span className="text-[9.5px] text-[#C59B27] font-black block mt-0.5">بوكس إهداء فاخر</span>
                 </button>
               </div>
             </div>
           )}
+          {/* ------------------------------------------------------------- */}
 
-          {/* 4. تجارب وتقييمات العملاء */}
+          {/* التقييمات */}
           <div className="bg-white rounded-3xl p-5 border border-stone-200/90 space-y-5 shadow-2xs">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
               <div>
@@ -566,7 +747,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
                     <div className="flex gap-0.5">
                       {Array.from({ length: Number(rev.rating) || 5 }).map((_, i) => (
-                        <Star key={i} className="w-3 h-3 text-amber-400 fill-amber-400" />
+                        <Star key={i} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                       ))}
                     </div>
 
@@ -578,7 +759,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               </div>
             )}
 
-            {/* نموذج إضافة تقييم جديد */}
             <form onSubmit={handleAddReview} className="space-y-3 pt-3 border-t border-stone-100">
               <div className="flex items-center justify-between bg-[#FAF5ED] p-3 rounded-2xl border border-stone-200/60">
                 <span className="text-xs font-black text-[#4A0E17]">
@@ -642,24 +822,38 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </form>
           </div>
 
-          {/* 5. تنبيه مسببات الحساسية */}
           <div className="flex items-start gap-2.5 p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-[11px] text-amber-900">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <span className="leading-relaxed">
               {isAr
-                ? "تنبيه مسببات الحساسية: اخبرنا اذا كان يوجد لديك اي حساسية من شي معيا."
+                ? "تنبيه مسببات الحساسية: اخبرنا اذا كان يوجد لديك اي حساسية من شيء معين."
                 : "Allergen Warning: Contains tree nuts, wheat, dairy, and natural ghee."}
             </span>
           </div>
 
         </div>
 
-        {/* شريط الإضافة للسلة النهائي */}
+        {/* ------------------------------------------------------------- */}
+        {/* 🌟 [المكان 3]: شريط الإضافة للسلة مع السعر المشطوب وشارة التوفير */}
+        {/* ------------------------------------------------------------- */}
         <div className="p-4 bg-[#4A0E17] text-white border-t border-[#C59B27]/30 flex items-center justify-between gap-4 shadow-lg">
           <div>
             <span className="block text-[10px] text-stone-300 font-bold uppercase tracking-wider">
               {t("total")}
             </span>
+
+            {/* إظهار السعر المشطوب للوزن المختار مع نسبة الخصم */}
+            {hasDiscount && currentOriginalPrice && (
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-xs line-through text-stone-300/80 font-mono font-bold">
+                  {currentOriginalPrice} {t("currency")}
+                </span>
+                <span className="text-[9.5px] bg-[#E5C058] text-[#4A0E17] font-black px-1.5 py-0.5 rounded-md shadow-xs">
+                  وفر {discountPercentage}%
+                </span>
+              </div>
+            )}
+
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-black text-white">{currentPrice.toFixed(2)}</span>
               <span className="text-xs font-bold text-[#E5C058]">{t("currency")}</span>
@@ -672,7 +866,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               title={isAr ? "هذا الصنف غير متوفر حالياً" : "Currently out of stock"}
             >
               <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>{isAr ? "نفذت الكمية  (انتظرونا قريباً)" : "Sold Out (Coming Soon)"}</span>
+              <span>{isAr ? "نفذت الكمية (انتظرونا قريباً)" : "Sold Out (Coming Soon)"}</span>
             </div>
           ) : (
             <button
@@ -685,6 +879,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </button>
           )}
         </div>
+        {/* ------------------------------------------------------------- */}
 
       </div>
     </div>

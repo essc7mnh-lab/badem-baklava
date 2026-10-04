@@ -30,6 +30,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase/supabase";
+import { calculateOrderFinancials, formatCurrency } from "@/lib/orderPricing";
 
 // 📱 رقم الواتساب الرسمي المعتمد للمتجر
 const STORE_WHATSAPP_NUMBER = "966592320106";
@@ -86,31 +87,43 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
   // نمط الاستلام: توصيل (35 ر.س) أو استلام من الفرع (0 ر.س مجاناً)
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
-  const deliveryFee = deliveryMode === "delivery" ? 35 : 0;
 
-  // حساب المجموع الفرعي والمبلغ الإجمالي النهائي
-  const rawSubtotal = (cart as CartProductItem[]).reduce(
-    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
-    0
-  );
-  const subtotal = Number(cartContext.subtotal) || rawSubtotal;
-  const finalCalculatedTotal = Math.max(0, subtotal - discountAmount + deliveryFee);
-
-  // استدعاء بيانات المستخدم
+  // بيانات العميل والعنوان
   const { userName, setUserName, userPhone, setUserPhone, addOrder } = useUser();
   const [currentStep, setCurrentStep] = useState<Step>("details");
-
-  // بيانات العميل والعنوان - الرياض مثبتة تلقائياً
   const [customerName, setCustomerName] = useState(userName || "");
   const [phone, setPhone] = useState(userPhone || "");
   const [city, setCity] = useState("الرياض");
   const [district, setDistrict] = useState("");
   const [street, setStreet] = useState("");
   const [notes, setNotes] = useState("");
-
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
 
-  // تصفية المدن (الرياض فقط)
+  // حساب المجموع الفرعي لمنتجات السلة
+  const rawSubtotal = useMemo(() => {
+    return (cart as CartProductItem[]).reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+      0
+    );
+  }, [cart]);
+
+  const subtotal = Number(cartContext.subtotal) || rawSubtotal;
+
+  // 🛡️ استدعاء المحرك المالي الموحد لحساب الفاتورة بدقة قطعية
+  const liveFinancials = useMemo(() => {
+    return calculateOrderFinancials({
+      subtotal,
+      delivery_fee: deliveryMode === "delivery" ? 35 : 0,
+      discount_amount: discountAmount,
+      notes: deliveryMode === "pickup" ? "[استلام من الفرع]" : "[توصيل للمنزل]",
+      city,
+    });
+  }, [subtotal, deliveryMode, discountAmount, city]);
+
+  
+  const finalCalculatedTotal = liveFinancials.finalTotal;
+
+  // تصفية وفحص اعتماد المدينة
   const filteredCities = useMemo(() => {
     if (!city.trim()) return SAUDI_CITIES;
     return SAUDI_CITIES.filter((c) =>
@@ -118,7 +131,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     );
   }, [city]);
 
-  // فحص صارم: التوصيل متاح داخل الرياض فقط
   const isCityValid = useMemo(() => {
     return SAUDI_CITIES.includes(city.trim());
   }, [city]);
@@ -188,7 +200,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
           if (res.ok) {
             const data = await res.json();
 
-            // 🌟 1. الفحص الذكي: هل العميل داخل نطاق الرياض فعلياً؟
+            // الفحص الذكي: هل العميل داخل نطاق الرياض فعلياً؟
             const isInsideRiyadh =
               (data.city && (data.city.includes("الرياض") || data.city.toLowerCase().includes("riyadh"))) ||
               (data.principalSubdivision && (data.principalSubdivision.includes("الرياض") || data.principalSubdivision.toLowerCase().includes("riyadh"))) ||
@@ -199,7 +211,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
                     a.name && (a.name.includes("الرياض") || a.name.toLowerCase().includes("riyadh"))
                 ));
 
-            // تحديد اسم المدينة الحقيقي للعميل
             let detectedCity = "الرياض";
             if (isInsideRiyadh) {
               detectedCity = "الرياض";
@@ -211,10 +222,8 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
                 "خارج الرياض";
             }
 
-            // كتابة المدينة الحقيقية لإظهار التحقق الأخضر أو التنبيه الأحمر
             setCity(detectedCity);
 
-            // 📍 2. استخراج اسم الحي بدقة
             let detectedDistrict = data.locality || "";
             if (
               (!detectedDistrict || detectedDistrict === detectedCity) &&
@@ -231,7 +240,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
             }
             if (detectedDistrict) setDistrict(detectedDistrict);
 
-            // 📍 3. استخراج الشارع والمنزل (مع تنظيف أسماء الدولة والمحافظة)
             let detectedRoad = "";
             if (Array.isArray(data.localityInfo?.administrative)) {
               const roadParts = data.localityInfo.administrative
@@ -256,7 +264,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
               setStreet(`موقع محدد عبر الخريطة (قرب ${detectedDistrict || detectedCity})`);
             }
 
-            // ⚠️ 4. تنبيه العميل فورياً إذا كان خارج الرياض
             if (!isInsideRiyadh) {
               setTimeout(() => {
                 alert(
@@ -286,14 +293,12 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     );
   };
 
-  // نسخ الآيبان أو رقم الحساب
   const handleCopyText = (text: string, type: "iban" | "account") => {
     navigator.clipboard.writeText(text);
     setCopiedField(type);
     setTimeout(() => setCopiedField(null), 2500);
   };
 
-  // 🛡️ فحص أمني لشروط الكوبون قبل الانتقال للدفع
   const validateCouponSecurity = async (phoneToCheck: string): Promise<boolean> => {
     if (!appliedCouponCode) return true;
 
@@ -361,13 +366,11 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 🔒 التحقق الإلزامي من بيانات العميل
     if (!customerName.trim() || !phone.trim()) {
       alert(isAr ? "يرجى إدخال اسم العميل ورقم الجوال." : "Please enter your name and phone number.");
       return;
     }
 
-    // 🔒 التحقق الإلزامي من العنوان داخل الرياض
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
         alert(isAr ? "عذراً، التوصيل متاح حالياً داخل مدينة الرياض فقط." : "Delivery is currently available in Riyadh only.");
@@ -432,7 +435,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
         : `🏪 *نوع الاستلام:* استلام شخصي من الفرع (مجاناً - 0.00 ر.س)\n• *الفرع:* فرع بادَم للحلويات الفاخرة`;
 
     const giftText = isGift
-      ? `\n🎁 *بيانات الإهداء :*\n• المهدَى إليه: ${recipientName || "غير محدد"}\n• رسالة البطاقة: "${giftMessage || "بدون رسالة"}"\n`
+      ? `\n🎁 *بيانات الإهداء:*\n• المهدَى إليه: ${recipientName || "غير محدد"}\n• رسالة البطاقة: "${giftMessage || "بدون رسالة"}"\n`
       : "";
 
     const notesText = notes ? `\n📝 *ملاحظات خاصة:* ${notes}\n` : "";
@@ -467,7 +470,7 @@ ${payMethodTitle}
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
   };
 
-  // ✅ تأكيد الطلب وحفظه في Supabase
+  // ✅ تأكيد الطلب وحفظه في Supabase بتدقيق مالي صارم
   const handleConfirmOrder = async () => {
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
@@ -554,7 +557,7 @@ ${payMethodTitle}
           verifiedItems.push({
             title: cartItem.title,
             portion: cartItem.portionNote || cartItem.portion || "افتراضي",
-            portionNote: cartItem.portionNote || "الحجم ",
+            portionNote: cartItem.portionNote || "الحجم القياسي",
             quantity: cartItem.quantity,
             price: officialPrice,
           });
@@ -574,9 +577,6 @@ ${payMethodTitle}
         }
       }
 
-      const verifiedTotalAmount = Math.max(0, verifiedSubtotal - verifiedDiscount + deliveryFee);
-      const generatedId = `BDM-${Math.floor(100000 + Math.random() * 900000)}`;
-
       const combinedNotes = [
         deliveryMode === "pickup" ? "[استلام من الفرع]" : "[توصيل للمنزل]",
         notes.trim(),
@@ -586,6 +586,18 @@ ${payMethodTitle}
         .filter(Boolean)
         .join(" | ");
 
+      // 🛡️ احتساب المبالغ النهائية عبر المحرك المالي الموحد بدقة
+      const finalOrderFinancials = calculateOrderFinancials({
+        subtotal: verifiedSubtotal,
+        delivery_fee: deliveryMode === "delivery" ? 35 : 0,
+        discount_amount: verifiedDiscount,
+        notes: combinedNotes,
+        city,
+      });
+
+      const generatedId = `BDM-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      // حمولة الطلب المحمية بجميع الحقول المالية الرسمية
       const orderPayload = {
         id: generatedId,
         customer_name: customerName.trim(),
@@ -598,10 +610,10 @@ ${payMethodTitle}
         recipient_name: isGift ? recipientName.trim() : null,
         gift_message: isGift ? giftMessage.trim() : null,
         items: verifiedItems,
-        subtotal: verifiedSubtotal,
-        discount_amount: verifiedDiscount,
-        delivery_fee: deliveryFee,
-        total_amount: verifiedTotalAmount,
+        subtotal: finalOrderFinancials.subtotal,
+        discount_amount: finalOrderFinancials.discount,
+        delivery_fee: finalOrderFinancials.deliveryFee,
+        total_amount: finalOrderFinancials.finalTotal,
         payment_method: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         status: "pending",
       };
@@ -639,7 +651,7 @@ ${payMethodTitle}
 
       setOrderId(generatedId);
 
-      const waUrl = createWhatsAppUrl(generatedId, verifiedTotalAmount, verifiedItems);
+      const waUrl = createWhatsAppUrl(generatedId, finalOrderFinancials.finalTotal, verifiedItems);
       setBackupWhatsAppUrl(waUrl);
 
       const win = window.open(waUrl, "_blank");
@@ -655,7 +667,7 @@ ${payMethodTitle}
           customerName: customerName.trim(),
           phone: phone.trim(),
           items: verifiedItems,
-          totalAmount: verifiedTotalAmount,
+          totalAmount: finalOrderFinancials.finalTotal,
           status: "pending",
           paymentMethod: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         });
@@ -694,7 +706,7 @@ ${payMethodTitle}
                 {currentStep === "tracking" && (isAr ? "تتبع الطلب المباشر" : "Live Tracking")}
               </h3>
               <p className="text-[10px] text-stone-300">
-                {currentStep === "tracking" ? `رقم الطلب: #${orderId}` : `إجمالي الطلب: ${finalCalculatedTotal.toFixed(2)} ر.س`}
+                {currentStep === "tracking" ? `رقم الطلب: #${orderId}` : `إجمالي الطلب: ${formatCurrency(finalCalculatedTotal)}`}
               </p>
             </div>
           </div>
@@ -844,7 +856,7 @@ ${payMethodTitle}
                         <span>تفاصيل موقع التوصيل (الرياض):</span>
                       </span>
 
-                      {/* زر تحديد الموقع بالـ GPS البارز بالعنابي والذهب */}
+                      {/* زر تحديد الموقع بالـ GPS البارز */}
                       <button
                         type="button"
                         onClick={handleGetLocation}
@@ -947,7 +959,7 @@ ${payMethodTitle}
                         )}
                       </div>
 
-                      {/* حقل الحي - يتعبأ تلقائياً عند الضغط على GPS */}
+                      {/* حقل الحي */}
                       <div>
                         <label className="block text-[11px] font-bold text-stone-700 mb-1">
                           {isAr ? "الحي *" : "District *"}
@@ -963,7 +975,7 @@ ${payMethodTitle}
                       </div>
                     </div>
 
-                    {/* حقل الشارع والمنزل - يتعبأ تلقائياً عند الضغط على GPS */}
+                    {/* حقل الشارع والمنزل */}
                     <div>
                       <label className="block text-[11px] font-bold text-stone-700 mb-1">
                         {isAr ? "الشارع وتفاصيل المنزل *" : "Street / House Details *"}
@@ -1005,7 +1017,7 @@ ${payMethodTitle}
                         {isAr ? "هل هذا الطلب إهداء لشخص عزيز؟" : "Is this order a gift?"}
                       </h4>
                       <p className="text-[10px] text-stone-500">
-                        {isAr ? "إضافة شريطة وبطاقة إهداء ملكية مجاناً" : "Free ribbon & gift card"}
+                        {isAr ? "إضافة شريطة وبطاقة إهداء  مجاناً" : "Free ribbon & gift card"}
                       </p>
                     </div>
                   </div>
@@ -1068,7 +1080,7 @@ ${payMethodTitle}
           {currentStep === "payment" && (
             <div className="space-y-4">
               
-              {/* ملخص السلة والتوصيل */}
+              {/* ملخص السلة والتوصيل عبر المحرك المالي */}
               <div className="bg-white p-4 rounded-2xl border border-stone-200/80 space-y-2 shadow-2xs text-xs">
                 <div className="flex justify-between font-bold text-stone-800 pb-2 border-b border-stone-100">
                   <span>{isAr ? "ملخص الأصناف المطلوبة:" : "Cart Summary:"}</span>
@@ -1098,7 +1110,7 @@ ${payMethodTitle}
 
                 <div className="flex justify-between font-black text-sm text-[#4A0E17] pt-2 border-t border-stone-100">
                   <span>المبلغ الصافي النهائي المطلوب:</span>
-                  <span>{finalCalculatedTotal.toFixed(2)} ر.س</span>
+                  <span>{formatCurrency(finalCalculatedTotal)}</span>
                 </div>
               </div>
 
@@ -1153,7 +1165,6 @@ ${payMethodTitle}
 
                     <div className="flex flex-col sm:flex-row items-center gap-4 bg-black/25 p-3.5 rounded-2xl border border-white/10">
                       
-                      {/* الباركود المستدعى محلياً */}
                       <div className="bg-white p-2.5 rounded-2xl shadow-md shrink-0 flex flex-col items-center justify-center">
                         <div className="relative w-28 h-28">
                           <Image
@@ -1173,7 +1184,6 @@ ${payMethodTitle}
 
                       <div className="flex-1 w-full space-y-2.5 text-xs">
                         
-                        {/* رقم الحساب */}
                         <div className="bg-white/5 p-2.5 rounded-xl border border-white/10">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[10px] text-stone-300">رقم الحساب:</span>
@@ -1191,7 +1201,6 @@ ${payMethodTitle}
                           </div>
                         </div>
 
-                        {/* رقم الآيبان */}
                         <div className="bg-white/5 p-2.5 rounded-xl border border-white/10">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[10px] text-stone-300">الآيبان الدولي (IBAN):</span>
@@ -1215,7 +1224,7 @@ ${payMethodTitle}
                     <div className="bg-black/30 p-2.5 rounded-xl border border-white/10 flex items-start gap-2 text-[10.5px] text-amber-200/90 leading-relaxed">
                       <Receipt className="w-4 h-4 text-[#E5C058] shrink-0 mt-0.5" />
                       <span>
-                        المبلغ المطلوب تحويله: (<strong>{finalCalculatedTotal.toFixed(2)} ر.س</strong>). يرجى إرفاق لقطة شاشة لإشعار التحويل البنكي مباشرة في محادثة الواتساب فور فتحها لتوثيق الطلب.
+                        المبلغ المطلوب تحويله: (<strong>{formatCurrency(finalCalculatedTotal)}</strong>). يرجى إرفاق لقطة شاشة لإشعار التحويل البنكي مباشرة في محادثة الواتساب فور فتحها لتوثيق الطلب.
                       </span>
                     </div>
                   </div>
@@ -1376,7 +1385,7 @@ ${payMethodTitle}
                 ) : (
                   <>
                     <MessageCircle className="w-5 h-5 text-emerald-400" />
-                    <span>تأكيد وإرسال عبر الواتساب ({finalCalculatedTotal.toFixed(2)} ر.س)</span>
+                    <span>تأكيد وإرسال عبر الواتساب ({formatCurrency(finalCalculatedTotal)})</span>
                   </>
                 )}
               </button>

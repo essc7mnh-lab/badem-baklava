@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Trash2,
   Star,
@@ -13,7 +13,10 @@ import {
   Save,
   Phone,
   Search,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff,
+  MessageCircle
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 
@@ -36,6 +39,7 @@ export const ReviewsManager: React.FC = () => {
   // أدوات البحث والفلترة
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | "all">("all");
+  const [approvalFilter, setApprovalFilter] = useState<"all" | "approved" | "pending">("all");
 
   // حالات نافذة التعديل
   const [editingReview, setEditingReview] = useState<Review | null>(null);
@@ -49,8 +53,8 @@ export const ReviewsManager: React.FC = () => {
     setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
-  // 1. دالة التحديث اليدوي عند النقر على زر التحديث
-  const fetchReviews = async () => {
+  // 1. دالة موحدة لجلب وتحديث التعليقات
+  const fetchReviews = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -62,38 +66,54 @@ export const ReviewsManager: React.FC = () => {
       if (data) setReviews(data);
     } catch (err) {
       console.error("Error fetching reviews:", err);
+      showNotice("تعذر تحميل التعليقات من قاعدة البيانات", true);
     } finally {
       setLoading(false);
     }
-  };
-
-  // 2. الجلب التلقائي النظيف عند تحميل الصفحة دون تحذيرات أو تعليق
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadInitialReviews = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("reviews")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        if (data && isMounted) setReviews(data);
-      } catch (err) {
-        console.error("Error loading reviews:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    loadInitialReviews();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
+  // 2. الجلب التلقائي عند التحميل
+
+  useEffect(() => {
+    const load = async () => {
+      await fetchReviews();
+    };
+    load();
+  }, [fetchReviews]);
+  // إغلاق نافذة التعديل بزر Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditingReview(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // 🛡️ تبديل حالة اعتماد التقييم ونشره في المتجر فورياً
+  const handleToggleApproval = async (review: Review) => {
+    const newStatus = !(review.is_approved ?? true);
+
+    // تحديث تفاؤلي فوري في الواجهة
+    setReviews((prev) =>
+      prev.map((r) => (r.id === review.id ? { ...r, is_approved: newStatus } : r))
+    );
+
+    try {
+      const { error } = await supabase
+        .from("reviews")
+        .update({ is_approved: newStatus })
+        .eq("id", review.id);
+
+      if (error) throw error;
+      showNotice(newStatus ? "تم اعتماد التقييم وظهوره في المتجر 🟢" : "تم إخفاء التقييم من المتجر 🔴");
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "فشل التحديث";
+      showNotice("تعذر تحديث حالة التقييم: " + errorMsg, true);
+      void fetchReviews();
+    }
+  };
+
+  // حذف التقييم
   const handleDeleteReview = async (id: string) => {
     if (!window.confirm("هل أنت متأكد من حذف هذا التعليق نهائياً؟")) return;
 
@@ -101,7 +121,7 @@ export const ReviewsManager: React.FC = () => {
       const { error } = await supabase.from("reviews").delete().eq("id", id);
       if (error) throw error;
       setReviews((prev) => prev.filter((r) => r.id !== id));
-      showNotice("تم حذف التعليق بنجاح");
+      showNotice("تم حذف التعليق بنجاح ✅");
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : "فشل الحذف";
       showNotice("تعذر حذف التعليق: " + errorMsg, true);
@@ -114,6 +134,7 @@ export const ReviewsManager: React.FC = () => {
     setEditRating(Number(rev.rating) || 5);
   };
 
+  // حفظ التعديلات
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingReview || !editComment.trim()) return;
@@ -139,7 +160,7 @@ export const ReviewsManager: React.FC = () => {
       );
 
       setEditingReview(null);
-      showNotice("تم تحديث التعليق بنجاح");
+      showNotice("تم تحديث التعليق بنجاح ✅");
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : "فشل التعديل";
       showNotice("تعذر حفظ التعديل: " + errorMsg, true);
@@ -148,33 +169,70 @@ export const ReviewsManager: React.FC = () => {
     }
   };
 
-  // تصفية التعليقات بحسب البحث والتقييم
+  // 💬 مراسلة العميل بالواتساب للاستفسار أو حل أي شكوى
+  const handleOpenWhatsApp = (rev: Review) => {
+    const rawPhone = rev.customer_phone || rev.phone;
+    if (!rawPhone) return;
+
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, "");
+    const formattedPhone = cleanPhone.startsWith("05")
+      ? `966${cleanPhone.slice(1)}`
+      : cleanPhone.startsWith("5")
+      ? `966${cleanPhone}`
+      : cleanPhone;
+
+    const message = `مرحباً أستاذ ${rev.customer_name || ""}، نشكرك لتقييمك متجر بادَم للبقلاوة الفاخرة ✨ نسعد دائماً برأيك ونتطلع لخدمتك بأعلى معايير الضيافة الملكية.`;
+    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, "_blank");
+  };
+
+  // حساب متوسط التقييم الإجمالي
+  const averageRating = useMemo(() => {
+    if (reviews.length === 0) return "5.0";
+    const sum = reviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+    return (sum / reviews.length).toFixed(1);
+  }, [reviews]);
+
+  // تصفية التعليقات بحسب البحث والتقييم وحالة الاعتماد
   const filteredReviews = useMemo(() => {
     return reviews.filter((rev) => {
+      const query = searchQuery.toLowerCase().trim();
       const matchQuery =
-        (rev.customer_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (rev.customer_phone || rev.phone || "").includes(searchQuery) ||
-        (rev.comment || "").toLowerCase().includes(searchQuery.toLowerCase());
+        !query ||
+        (rev.customer_name || "").toLowerCase().includes(query) ||
+        (rev.customer_phone || rev.phone || "").includes(query) ||
+        (rev.comment || "").toLowerCase().includes(query);
 
       const matchRating =
         selectedRatingFilter === "all" || Number(rev.rating) === selectedRatingFilter;
 
-      return matchQuery && matchRating;
+      const isApproved = rev.is_approved ?? true;
+      const matchApproval =
+        approvalFilter === "all" ||
+        (approvalFilter === "approved" && isApproved) ||
+        (approvalFilter === "pending" && !isApproved);
+
+      return matchQuery && matchRating && matchApproval;
     });
-  }, [reviews, searchQuery, selectedRatingFilter]);
+  }, [reviews, searchQuery, selectedRatingFilter, approvalFilter]);
 
   return (
     <div className="bg-white p-6 rounded-3xl border border-stone-200/90 shadow-2xs space-y-5 select-none relative">
       
-      {/* الترويسة العلوية */}
+      {/* الترويسة العلوية مع معدل التقييم الإجمالي */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center">
-            <MessageSquare className="w-4 h-4 text-[#C59B27]" />
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center">
+            <MessageSquare className="w-5 h-5 text-[#C59B27]" />
           </div>
           <div>
-            <h3 className="text-xs font-black text-stone-900">إدارة تعليقات وتقييمات العملاء </h3>
-            <p className="text-[10px] text-stone-400 mt-0.5">متابعة ومراجعة آراء الذواقين والتحكم بها</p>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black text-stone-900">إدارة تقييمات وآراء العملاء</h3>
+              <span className="text-[10px] bg-amber-50 text-amber-900 font-black px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1 font-mono">
+                <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                <span>{averageRating} / 5</span>
+              </span>
+            </div>
+            <p className="text-[10.5px] text-stone-400 mt-0.5">مراجعة آراء الذواقين واعتماد النشر أو الإخفاء</p>
           </div>
         </div>
 
@@ -182,13 +240,15 @@ export const ReviewsManager: React.FC = () => {
           <button
             type="button"
             onClick={fetchReviews}
+            disabled={loading}
             className="p-2 bg-stone-100 hover:bg-stone-200 rounded-xl text-stone-700 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold"
             title="تحديث القائمة"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span>تحديث</span>
           </button>
           <span className="text-xs bg-[#FAF5ED] text-[#4A0E17] font-black px-3.5 py-1.5 rounded-2xl border border-stone-200/80 font-mono">
-            العدد: {filteredReviews.length} من {reviews.length}
+            {filteredReviews.length} من {reviews.length} تقييم
           </span>
         </div>
       </div>
@@ -211,7 +271,7 @@ export const ReviewsManager: React.FC = () => {
         </div>
       )}
 
-      {/* أدوات البحث والتصفية */}
+      {/* أدوات البحث والتصفية المزدوجة */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="relative flex-1">
           <Search className="w-3.5 h-3.5 text-stone-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -224,14 +284,44 @@ export const ReviewsManager: React.FC = () => {
           />
         </div>
 
+        {/* فلترة حالة الاعتماد */}
+        <div className="flex items-center gap-1 bg-[#FAF5ED] p-1 rounded-2xl border border-stone-200 shrink-0 text-xs">
+          <button
+            type="button"
+            onClick={() => setApprovalFilter("all")}
+            className={`px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+              approvalFilter === "all" ? "bg-[#4A0E17] text-white shadow-xs" : "text-stone-600"
+            }`}
+          >
+            الكل
+          </button>
+          <button
+            type="button"
+            onClick={() => setApprovalFilter("approved")}
+            className={`px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+              approvalFilter === "approved" ? "bg-emerald-700 text-white shadow-xs" : "text-stone-600"
+            }`}
+          >
+            المنشورة 🟢
+          </button>
+          <button
+            type="button"
+            onClick={() => setApprovalFilter("pending")}
+            className={`px-2.5 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+              approvalFilter === "pending" ? "bg-amber-700 text-white shadow-xs" : "text-stone-600"
+            }`}
+          >
+            المخفية 🔴
+          </button>
+        </div>
+
+        {/* فلترة عدد النجوم */}
         <div className="flex items-center gap-1 bg-[#FAF5ED] p-1 rounded-2xl border border-stone-200 shrink-0 overflow-x-auto">
           <button
             type="button"
             onClick={() => setSelectedRatingFilter("all")}
-            className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer ${
-              selectedRatingFilter === "all"
-                ? "bg-[#4A0E17] text-[#E5C058] shadow-xs"
-                : "text-stone-600 hover:text-stone-900"
+            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer ${
+              selectedRatingFilter === "all" ? "bg-[#4A0E17] text-[#E5C058] shadow-xs" : "text-stone-600"
             }`}
           >
             الكل
@@ -241,10 +331,8 @@ export const ReviewsManager: React.FC = () => {
               key={stars}
               type="button"
               onClick={() => setSelectedRatingFilter(stars)}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer flex items-center gap-1 ${
-                selectedRatingFilter === stars
-                  ? "bg-[#4A0E17] text-[#E5C058] shadow-xs"
-                  : "text-stone-600 hover:text-stone-900"
+              className={`px-2 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer flex items-center gap-0.5 ${
+                selectedRatingFilter === stars ? "bg-[#4A0E17] text-[#E5C058] shadow-xs" : "text-stone-600"
               }`}
             >
               <span>{stars}</span>
@@ -267,76 +355,125 @@ export const ReviewsManager: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3.5">
-          {filteredReviews.map((rev) => (
-            <div
-              key={rev.id}
-              className="p-4 rounded-2xl border border-stone-200/90 bg-[#FAF5ED]/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs transition hover:bg-[#FAF5ED]/80"
-            >
-              {/* التفاصيل */}
-              <div className="space-y-2 min-w-0 flex-1">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <div className="w-7 h-7 rounded-full bg-[#4A0E17] text-[#E5C058] flex items-center justify-center font-black text-xs">
-                    {(rev.customer_name || "ع")[0]}
+          {filteredReviews.map((rev) => {
+            const isApproved = rev.is_approved ?? true;
+            const hasPhone = Boolean(rev.customer_phone || rev.phone);
+
+            return (
+              <div
+                key={rev.id}
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs transition ${
+                  isApproved 
+                    ? "border-stone-200/90 bg-[#FAF5ED]/40 hover:bg-[#FAF5ED]/80" 
+                    : "border-amber-300 bg-amber-50/30 hover:bg-amber-50/50"
+                }`}
+              >
+                {/* التفاصيل */}
+                <div className="space-y-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <div className="w-7 h-7 rounded-full bg-[#4A0E17] text-[#E5C058] flex items-center justify-center font-black text-xs">
+                      {(rev.customer_name || "ع")[0]}
+                    </div>
+                    <span className="text-xs font-black text-stone-900">{rev.customer_name}</span>
+
+                    {hasPhone && (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-white text-stone-700 font-bold px-2.5 py-0.5 rounded-lg border border-stone-200 font-mono shadow-2xs">
+                        <Phone className="w-3 h-3 text-[#C59B27]" />
+                        <span>{rev.customer_phone || rev.phone}</span>
+                      </span>
+                    )}
+
+                    {/* حالة النشر في المتجر */}
+                    <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded-full border ${
+                      isApproved 
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
+                        : "bg-amber-100 text-amber-900 border-amber-300"
+                    }`}>
+                      {isApproved ? "ظاهر في المتجر 🟢" : "مخفي مؤقتاً 🔴"}
+                    </span>
+
+                    <div className="flex items-center gap-0.5 mr-auto sm:mr-0">
+                      {Array.from({ length: Number(rev.rating) || 5 }).map((_, i) => (
+                        <Star key={i} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                      ))}
+                    </div>
                   </div>
-                  <span className="text-xs font-black text-stone-900">{rev.customer_name}</span>
 
-                  <span className="inline-flex items-center gap-1 text-[10px] bg-white text-stone-700 font-bold px-2.5 py-0.5 rounded-lg border border-stone-200 font-mono shadow-2xs">
-                    <Phone className="w-3 h-3 text-[#C59B27]" />
-                    <span>{rev.customer_phone || rev.phone || "رقم غير متوفر"}</span>
+                  <p className="text-xs text-stone-700 leading-relaxed bg-white p-3 rounded-xl border border-stone-200/70 font-medium">
+                    {rev.comment}
+                  </p>
+
+                  <span className="text-[10px] text-stone-400 block font-mono">
+                    {rev.created_at ? new Date(rev.created_at).toLocaleString("ar-SA") : ""}
                   </span>
-
-                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200/60">
-                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
-                    <span>مشتري مؤكد</span>
-                  </span>
-
-                  <div className="flex items-center gap-0.5 mr-auto sm:mr-0">
-                    {Array.from({ length: Number(rev.rating) || 5 }).map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                    ))}
-                  </div>
                 </div>
 
-                <p className="text-xs text-stone-700 leading-relaxed bg-white p-3 rounded-xl border border-stone-200/70 font-medium">
-                  {rev.comment}
-                </p>
+                {/* أزرار الإجراءات السريعة */}
+                <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                  
+                  {/* زر التبديل بين النشر والإخفاء */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleApproval(rev)}
+                    className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-xs font-bold ${
+                      isApproved
+                        ? "bg-stone-50 hover:bg-stone-100 text-stone-600 border-stone-200"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+                    }`}
+                    title={isApproved ? "إخفاء التقييم من المتجر" : "اعتماد ونشر التقييم في المتجر"}
+                  >
+                    {isApproved ? <EyeOff className="w-4 h-4 text-stone-500" /> : <Eye className="w-4 h-4" />}
+                    <span className="hidden md:inline">{isApproved ? "إخفاء" : "اعتماد"}</span>
+                  </button>
 
-                <span className="text-[10px] text-stone-400 block font-mono">
-                  {rev.created_at ? new Date(rev.created_at).toLocaleString("ar-SA") : ""}
-                </span>
+                  {/* زر محادثة الواتساب */}
+                  {hasPhone && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenWhatsApp(rev)}
+                      className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 active:scale-95 transition cursor-pointer shadow-2xs"
+                      title="مراسلة العميل بالواتساب"
+                    >
+                      <MessageCircle className="w-4 h-4 text-emerald-600" />
+                    </button>
+                  )}
+
+                  {/* زر التعديل */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEdit(rev)}
+                    className="p-2.5 rounded-xl bg-white border border-stone-200 text-stone-600 hover:text-[#4A0E17] hover:border-[#4A0E17] active:scale-95 transition cursor-pointer shadow-2xs"
+                    title="تعديل التعليق"
+                  >
+                    <Edit3 className="w-4 h-4 text-[#C59B27]" />
+                  </button>
+
+                  {/* زر الحذف */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReview(rev.id)}
+                    className="p-2.5 rounded-xl bg-white border border-stone-200 text-stone-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 active:scale-95 transition cursor-pointer shadow-2xs"
+                    title="حذف التعليق"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-
-              {/* أزرار الإجراءات */}
-              <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleOpenEdit(rev)}
-                  className="p-2.5 rounded-xl bg-white border border-stone-200 text-stone-600 hover:text-[#4A0E17] hover:border-[#4A0E17] active:scale-95 transition cursor-pointer shadow-2xs flex items-center gap-1.5 text-xs font-bold"
-                  title="تعديل التعليق"
-                >
-                  <Edit3 className="w-4 h-4 text-[#C59B27]" />
-                  <span className="sm:hidden">تعديل</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleDeleteReview(rev.id)}
-                  className="p-2.5 rounded-xl bg-white border border-stone-200 text-stone-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 active:scale-95 transition cursor-pointer shadow-2xs flex items-center gap-1.5 text-xs font-bold"
-                  title="حذف التعليق"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span className="sm:hidden">حذف</span>
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* نافذة Modal لتعديل التعليق */}
       {editingReview && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#FAF5ED] w-full max-w-md rounded-3xl p-6 shadow-2xl border border-[#4A0E17]/20 space-y-4 relative text-[#2D2321] animate-in zoom-in-95 duration-200">
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setEditingReview(null)}
+        >
+          <div 
+            className="bg-[#FAF5ED] w-full max-w-md rounded-3xl p-6 shadow-2xl border border-[#4A0E17]/20 space-y-4 relative text-[#2D2321] animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-stone-200/80 pb-3">
               <div className="flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-[#4A0E17]" />

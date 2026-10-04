@@ -2,301 +2,320 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase/supabase";
-import { PackagePlus, Save, Sparkles, Check, Box, Layers, DollarSign, Loader2 } from "lucide-react";
+import { 
+  PackagePlus, Save, Layers, 
+  DollarSign, Loader2, Eye, EyeOff 
+} from "lucide-react";
 
-interface BoxTier {
+// تعريف النوع محلياً لضمان عدم حدوث أي تعارض مع ملفات أخرى
+export interface BoxTier {
   id: string;
   name_ar: string;
   name_en: string;
+  subtitle_ar?: string;
+  subtitle_en?: string;
   capacity: number;
   price: number;
+  is_active?: boolean;
 }
 
+interface BoxSettings {
+  pricing_mode: "dynamic" | "fixed";
+  packaging_fee: number;
+  is_enabled: boolean;
+}
+
+const defaultTiers: BoxTier[] = [
+  { 
+    id: "box_250g", 
+    name_ar: "بوكس ربع كيلو (250g)", 
+    name_en: "Box (250g)", 
+    subtitle_ar: "8 - 10 قطع",
+    capacity: 2, 
+    price: 25,
+    is_active: true
+  },
+  { 
+    id: "box_500g", 
+    name_ar: "بوكس نصف كيلو (500g)", 
+    name_en: "Box (500g)", 
+    subtitle_ar: "16 - 20 قطعة",
+    capacity: 4, 
+    price: 45,
+    is_active: true
+  },
+  { 
+    id: "box_1000g", 
+    name_ar: "بوكس 1 كيلو (1000g)", 
+    name_en: "Box (1kg)", 
+    subtitle_ar: "30 - 36 قطعة",
+    capacity: 8, 
+    price: 85,
+    is_active: true
+  },
+];
+
 export const BoxBuilderSettings: React.FC = () => {
-  const [pricingMode, setPricingMode] = useState<"dynamic" | "fixed">("dynamic");
-  const [packagingFee, setPackagingFee] = useState<number>(0);
-  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const [tiers, setTiers] = useState<BoxTier[]>(defaultTiers);
+  const [settings, setSettings] = useState<BoxSettings>({
+    pricing_mode: "dynamic",
+    packaging_fee: 0,
+    is_enabled: true,
+  });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // قائمة مقاسات البوكسات
-  const [tiers, setTiers] = useState<BoxTier[]>([]);
+  const fetchSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [{ data: sData }, { data: tData }] = await Promise.all([
+        supabase.from("box_builder_settings").select("*").eq("id", "default").maybeSingle(),
+        supabase.from("custom_box_tiers").select("*").order("capacity", { ascending: true }),
+      ]);
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
+      if (sData) {
+        setSettings({
+          pricing_mode: sData.pricing_mode || "dynamic",
+          packaging_fee: Number(sData.packaging_fee) || 0,
+          is_enabled: sData.is_enabled ?? true,
+        });
+      }
 
-  // جلب إعدادات المتجر ومقاسات البوكسات بأمان
+      if (tData && tData.length > 0) {
+        setTiers(tData);
+      } else {
+        setTiers(defaultTiers);
+      }
+    } catch (e) {
+      console.error("Error fetching box settings:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // جلب البيانات بشكل غير متزامن لتفادي تحذيرات ESLint
   useEffect(() => {
     let isMounted = true;
-
-    const loadAllSettings = async () => {
-      try {
-        const [settingsRes, tiersRes] = await Promise.all([
-          supabase.from("box_builder_settings").select("*").eq("id", "default").maybeSingle(),
-          supabase.from("custom_box_tiers").select("*").order("capacity", { ascending: true }),
-        ]);
-
-        if (isMounted) {
-          if (settingsRes.data) {
-            setPricingMode(settingsRes.data.pricing_mode || "dynamic");
-            setPackagingFee(Number(settingsRes.data.packaging_fee) || 0);
-            setIsEnabled(settingsRes.data.is_enabled ?? true);
-          }
-
-          if (tiersRes.data && tiersRes.data.length > 0) {
-            setTiers(tiersRes.data as BoxTier[]);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load box builder settings:", err);
-      }
-    };
-
     const timer = setTimeout(() => {
-      void loadAllSettings();
+      if (isMounted) {
+        void fetchSettings();
+      }
     }, 0);
 
     return () => {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, []);
+  }, [fetchSettings]);
 
-  // تحديث سعر أو سعة بوكس معين محلياً
-  const handleTierChange = useCallback((id: string, field: "price" | "capacity", value: number) => {
-    setTiers((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, [field]: value } : t))
-    );
-  }, []);
-
-  // حفظ التعديلات في قاعدة البيانات
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setSavedSuccess(false);
-
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      // 1. تحديث الإعدادات العامة
-      const { error: settingsError } = await supabase
-        .from("box_builder_settings")
-        .upsert({
-          id: "default",
-          pricing_mode: pricingMode,
-          packaging_fee: packagingFee,
-          is_enabled: isEnabled,
+      // 1. حفظ الإعدادات العامة
+      const { error: sErr } = await supabase.from("box_builder_settings").upsert({
+        id: "default",
+        pricing_mode: settings.pricing_mode,
+        packaging_fee: Number(settings.packaging_fee),
+        is_enabled: settings.is_enabled,
+        
+      });
+      if (sErr) throw new Error(`خطأ في حفظ الإعدادات: ${sErr.message}`);
+
+      // 2. حفظ مقاسات البوكسات
+      for (const t of tiers) {
+        const { error: tErr } = await supabase.from("custom_box_tiers").upsert({
+          id: t.id,
+          name_ar: t.name_ar,
+          name_en: t.name_en,
+          subtitle_ar: t.subtitle_ar || "",
+          capacity: Number(t.capacity),
+          price: Number(t.price),
+          is_active: t.is_active ?? true,
           updated_at: new Date().toISOString(),
         });
+        if (tErr) throw new Error(`خطأ في حفظ ${t.name_ar}: ${tErr.message}`);
+      }
 
-      if (settingsError) throw settingsError;
-
-      // 2. تحديث السعة والأسعار في جدول custom_box_tiers بالتوازي
-      const updatePromises = tiers.map((tier) =>
-        supabase
-          .from("custom_box_tiers")
-          .update({
-            price: tier.price,
-            capacity: tier.capacity,
-          })
-          .eq("id", tier.id)
-      );
-
-      const results = await Promise.all(updatePromises);
-      const failed = results.find((res) => res.error);
-      if (failed && failed.error) throw failed.error;
-
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3500);
+      alert("تم حفظ إعدادات ومقاسات البوكسات بنجاح! 📦✨");
+      await fetchSettings();
     } catch (err: unknown) {
-      console.error("Save box settings error:", err);
-      const message = err instanceof Error ? err.message : "يرجى المحاولة لاحقاً";
-      alert("حدث خطأ أثناء الحفظ: " + message);
+      const msg = err instanceof Error ? err.message : "خطأ غير متوقع";
+      alert("تعذر الحفظ: " + msg);
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
+  const updateTier = (id: string, field: keyof BoxTier, val: string | number | boolean) => {
+    setTiers((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, [field]: val } : t))
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center bg-white rounded-3xl border border-stone-200">
+        <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#4A0E17]" />
+        <span className="text-xs text-stone-400 mt-2 block font-bold">جاري تحميل إعدادات البوكسات...</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-3xl border border-stone-200/80 shadow-2xs overflow-hidden p-6 max-w-3xl mx-auto space-y-6 text-stone-800 select-none">
-      {/* ترويسة اللوحة */}
+    <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-6 select-none">
       <div className="flex items-center justify-between border-b border-stone-100 pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-2xl bg-[#4A0E17]/10 flex items-center justify-center text-[#4A0E17]">
             <PackagePlus className="w-5 h-5 text-[#C59B27]" />
           </div>
           <div>
-            <h3 className="font-black text-base text-[#4A0E17]">إعدادات خدمة &quot;صمّم بوكسك&quot;</h3>
-            <p className="text-xs text-stone-400">التحكم في طريقة تسعير البوكسات وسعاتها</p>
+            <h3 className="text-sm font-black text-[#4A0E17]">إعدادات خدمة صانع البوكسات المخصصة</h3>
+            <p className="text-[11px] text-stone-400">التحكم في طريقة التسعير، رسوم التغليف، والمقاسات والملاحظات</p>
           </div>
         </div>
 
-        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold bg-[#FAF5ED] px-3.5 py-2 rounded-xl border border-stone-200 shadow-2xs">
-          <span>{isEnabled ? "الخدمة نشطة 🟢" : "الخدمة معطلة 🔴"}</span>
-          <input
-            type="checkbox"
-            checked={isEnabled}
-            onChange={(e) => setIsEnabled(e.target.checked)}
-            className="w-4 h-4 accent-[#4A0E17] rounded-md cursor-pointer"
-          />
-        </label>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="px-5 py-2.5 bg-[#4A0E17] hover:bg-[#34050D] text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition active:scale-95"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 text-[#E5C058]" />}
+          <span>{saving ? "جاري الحفظ..." : "حفظ التغييرات"}</span>
+        </button>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
-        {/* طريقة التسعير */}
-        <div className="space-y-2">
-          <label className="text-xs font-black text-stone-700 block">طريقة حساب سعر البوكس:</label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* خيار التسعير الديناميكي */}
-            <div
-              onClick={() => setPricingMode("dynamic")}
-              className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                pricingMode === "dynamic"
-                  ? "border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs ring-1 ring-[#4A0E17]/20"
-                  : "border-stone-200 hover:border-stone-300 bg-white"
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200/80 space-y-2">
+          <label className="text-xs font-black text-[#4A0E17] block">نظام تسعير البوكس:</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, pricing_mode: "dynamic" })}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                settings.pricing_mode === "dynamic"
+                  ? "bg-[#4A0E17] text-white border-[#4A0E17]"
+                  : "bg-white text-stone-700 border-stone-200"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#4A0E17]">تسعير ديناميكي (تراكمي)</span>
-                <Sparkles className="w-4 h-4 text-[#C59B27]" />
-              </div>
-              <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
-                يُحسب السعر بجمع أسعار القطع التي يختارها العميل تلقائياً + رسوم التغليف.
-              </p>
-            </div>
-
-            {/* خيار السعر الثابت */}
-            <div
-              onClick={() => setPricingMode("fixed")}
-              className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                pricingMode === "fixed"
-                  ? "border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs ring-1 ring-[#4A0E17]/20"
-                  : "border-stone-200 hover:border-stone-300 bg-white"
+              ديناميكي (مجموع الحبات)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, pricing_mode: "fixed" })}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                settings.pricing_mode === "fixed"
+                  ? "bg-[#4A0E17] text-white border-[#4A0E17]"
+                  : "bg-white text-stone-700 border-stone-200"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#4A0E17]">سعر موحد ثابت للبوكس</span>
-                <DollarSign className="w-4 h-4 text-[#C59B27]" />
-              </div>
-              <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
-                تحديد سعر مقطوع ومحدد لكل مقاس بوكس تدخله أنت بالأسفل بغض النظر عن الأصناف.
-              </p>
-            </div>
+              ثابت (سعر محدد للبوكس)
+            </button>
           </div>
         </div>
 
-        {/* 🌟 قسم سعات وأسعار البوكسات */}
-        <div className="space-y-3 bg-[#FAF5ED] p-5 rounded-2xl border border-stone-200">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 border-b border-stone-200/60 pb-2">
-            <span className="text-xs font-black text-[#4A0E17] flex items-center gap-1.5">
-              <Box className="w-4 h-4 text-[#C59B27]" />
-              <span>
-                {pricingMode === "fixed"
-                  ? "تحديد أسعار وسعات البوكسات الموحدة:"
-                  : "تحديد سعة البوكسات (عدد القطع المسموحة):"}
-              </span>
-            </span>
-            <span className="text-[10px] text-stone-500 font-bold">
-              {pricingMode === "fixed"
-                ? "⚠️ السعر المكتوب هنا هو السعر الثابت الذي سيدفعه العميل"
-                : "ℹ️ السعر يُحسب آلياً بحسب أصناف العميل المختارة"}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {tiers.map((t) => (
-              <div
-                key={t.id}
-                className="bg-white p-3.5 rounded-xl border border-stone-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center font-black text-xs shrink-0">
-                    <Layers className="w-4 h-4 text-[#C59B27]" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-stone-800">{t.name_ar}</h4>
-                    <span className="text-[10px] text-stone-400 font-medium">{t.name_en}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                  {/* حقل سعة البوكس */}
-                  <div className="flex-1 sm:flex-initial">
-                    <label className="block text-[10px] font-bold text-stone-500 mb-0.5">سعة البوكس (عدد القطع):</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="1"
-                        value={t.capacity}
-                        onChange={(e) => handleTierChange(t.id, "capacity", parseInt(e.target.value) || 1)}
-                        className="w-28 bg-[#FAF5ED] border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-stone-800 focus:outline-hidden focus:border-[#4A0E17]"
-                      />
-                      <span className="absolute left-2.5 top-1.5 text-[10px] text-stone-400 font-bold pointer-events-none">قطع</span>
-                    </div>
-                  </div>
-
-                  {/* حقل تحديد السعر المباشر للبوكس */}
-                  {pricingMode === "fixed" && (
-                    <div className="flex-1 sm:flex-initial animate-in fade-in duration-200">
-                      <label className="block text-[10px] font-bold text-stone-500 mb-0.5">سعر البوكس (ر.س):</label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={t.price}
-                          onChange={(e) => handleTierChange(t.id, "price", parseFloat(e.target.value) || 0)}
-                          className="w-28 bg-[#FAF5ED] border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#4A0E17] focus:outline-hidden focus:border-[#4A0E17]"
-                        />
-                        <span className="absolute left-2.5 top-1.5 text-[10px] text-stone-400 font-bold pointer-events-none">ر.س</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* رسوم العلبة والتغليف */}
-        <div>
-          <label className="block text-xs font-black text-stone-700 mb-1">
-            سعر علبة التغليف الفاخرة (ر.س):
+        <div className="bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200/80 space-y-2">
+          <label className="text-xs font-black text-[#4A0E17] flex items-center gap-1">
+            <DollarSign className="w-3.5 h-3.5 text-[#C59B27]" />
+            <span>رسوم التغليف الإضافية (ر.س):</span>
           </label>
-          <div className="relative max-w-xs">
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={packagingFee}
-              onChange={(e) => setPackagingFee(parseFloat(e.target.value) || 0)}
-              className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-[#4A0E17] focus:outline-hidden focus:border-[#4A0E17]"
-            />
-            <span className="absolute left-3 top-2.5 text-xs text-stone-400 font-bold pointer-events-none">ر.س</span>
-          </div>
-          <p className="text-[10px] text-stone-400 mt-1 font-medium">
-            * ضع القيمة (0) إذا كنت تريد تقديم العلبة الفاخرة والتغليف مجاناً كعرض ترويجي.
-          </p>
+          <input
+            type="number"
+            min="0"
+            value={settings.packaging_fee}
+            onChange={(e) => setSettings({ ...settings, packaging_fee: Number(e.target.value) })}
+            className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs font-bold"
+            placeholder="0.00"
+          />
         </div>
+      </div>
 
-        {/* زر الحفظ */}
-        <div className="flex items-center justify-between pt-3 border-t border-stone-100">
-          {savedSuccess ? (
-            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 animate-in fade-in">
-              <Check className="w-4 h-4" /> تم تحديث الإعدادات بنجاح!
-            </span>
-          ) : <span />}
+      <div className="space-y-3">
+        <span className="text-xs font-black text-[#4A0E17] block flex items-center gap-1.5">
+          <Layers className="w-4 h-4 text-[#C59B27]" />
+          <span>مقاسات البوكسات وتفاصيلها:</span>
+        </span>
 
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="px-7 py-3 bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-          >
-            {isSaving ? (
-              <Loader2 className="w-4 h-4 animate-spin text-[#C59B27]" />
-            ) : (
-              <Save className="w-4 h-4 text-[#C59B27]" />
-            )}
-            <span>{isSaving ? "جاري الحفظ..." : "حفظ الإعدادات"}</span>
-          </button>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {tiers.map((tier) => (
+            <div key={tier.id} className="p-4 bg-[#FAF5ED]/50 rounded-2xl border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono font-bold text-stone-400 bg-white px-2 py-0.5 rounded-md border border-stone-200">
+                  {tier.id}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => updateTier(tier.id, "is_active", !(tier.is_active ?? true))}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 cursor-pointer transition ${
+                    tier.is_active ?? true
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-stone-200 text-stone-500"
+                  }`}
+                >
+                  {tier.is_active ?? true ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                  <span>{tier.is_active ?? true ? "مفعّل" : "معطل"}</span>
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 mb-1">الاسم بالعربي:</label>
+                <input
+                  type="text"
+                  value={tier.name_ar}
+                  onChange={(e) => updateTier(tier.id, "name_ar", e.target.value)}
+                  className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 mb-1">الاسم بالإنجليزي:</label>
+                <input
+                  type="text"
+                  value={tier.name_en}
+                  onChange={(e) => updateTier(tier.id, "name_en", e.target.value)}
+                  className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                  ملاحظة / عدد القطع (تظهر تحت البوكس):
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: 8 - 10 قطع"
+                  value={tier.subtitle_ar || ""}
+                  onChange={(e) => updateTier(tier.id, "subtitle_ar", e.target.value)}
+                  className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700 mb-1">السعة (قطع):</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={tier.capacity}
+                    onChange={(e) => updateTier(tier.id, "capacity", Number(e.target.value))}
+                    className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700 mb-1">السعر الثابت (ر.س):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={tier.price}
+                    onChange={(e) => updateTier(tier.id, "price", Number(e.target.value))}
+                    className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
-      </form>
+      </div>
     </div>
   );
 };
