@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Gift,
@@ -34,6 +34,12 @@ interface SavedCoupon {
   created_at: string;
 }
 
+// 🛡️ دالة مساعدة خارجية ومستقلة لتوليد كود الكوبون بعيداً عن دورة تصيير المكون
+function generateCouponCode(discountPercent: number): string {
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `BADEM-${discountPercent}-${randomSuffix}`;
+}
+
 export const RewardsModal: React.FC = () => {
   const { isRewardsOpen, setIsRewardsOpen, points = 0, redeemPoints } = useUser();
   const { applyCoupon, setIsCartOpen } = useCart();
@@ -60,66 +66,75 @@ export const RewardsModal: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isRewardsOpen, setIsRewardsOpen]);
 
-  // تحميل المكافآت والتحقق من الكوبونات المحفوظة
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      // 1. جلب قائمة المكافآت وإعدادات النقاط
-      const [rewardsRes, settingsRes] = await Promise.all([
-        supabase
-          .from("loyalty_rewards")
-          .select("*")
-          .order("points_required", { ascending: true }),
-        supabase
-          .from("store_settings")
-          .select("*")
-          .eq("id", "loyalty")
-          .maybeSingle(),
-      ]);
-
-      if (rewardsRes.data) {
-        setRewards(rewardsRes.data);
-      }
-
-      if (settingsRes.data?.points_per_sar) {
-        setPointsPerSar(Number(settingsRes.data.points_per_sar));
-      }
-
-      // 2. فحص الكوبونات المستبدلة سابقاً وتحديث الصالح منها فقط
-      try {
-        const stored = localStorage.getItem("badem_saved_coupons");
-        const localCoupons: SavedCoupon[] = stored ? JSON.parse(stored) : [];
-
-        if (localCoupons.length > 0) {
-          const codes = localCoupons.map((c) => c.code);
-          const { data: validCoupons } = await supabase
-            .from("coupons")
-            .select("code, discount_percent, created_at, is_used")
-            .in("code", codes)
-            .eq("is_used", false);
-
-          if (validCoupons) {
-            setMyCoupons(validCoupons);
-            localStorage.setItem("badem_saved_coupons", JSON.stringify(validCoupons));
-          }
-        } else {
-          setMyCoupons([]);
-        }
-      } catch (storageErr) {
-        console.warn("LocalStorage coupons parse error:", storageErr);
-      }
-    } catch (err) {
-      console.error("Error loading loyalty rewards:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // 🛡️ النمط الهندسي القياسي لجلب البيانات غير المتزامنة مع صمام تنظيف وإلغاء
   useEffect(() => {
-    if (isRewardsOpen) {
-      loadData();
-    }
-  }, [isRewardsOpen, loadData]);
+    if (!isRewardsOpen) return;
+
+    let isMounted = true;
+
+    const fetchLoyaltyData = async () => {
+      try {
+        // 1. جلب قائمة المكافآت وإعدادات النقاط بالتوازي
+        const [rewardsRes, settingsRes] = await Promise.all([
+          supabase
+            .from("loyalty_rewards")
+            .select("*")
+            .order("points_required", { ascending: true }),
+          supabase
+            .from("store_settings")
+            .select("*")
+            .eq("id", "loyalty")
+            .maybeSingle(),
+        ]);
+
+        if (!isMounted) return;
+
+        if (rewardsRes.data) {
+          setRewards(rewardsRes.data);
+        }
+
+        if (settingsRes.data?.points_per_sar) {
+          setPointsPerSar(Number(settingsRes.data.points_per_sar));
+        }
+
+        // 2. التحقق من صحة الكوبونات المحفوظة محلياً عبر قاعدة البيانات
+        try {
+          const stored = localStorage.getItem("badem_saved_coupons");
+          const localCoupons: SavedCoupon[] = stored ? JSON.parse(stored) : [];
+
+          if (localCoupons.length > 0) {
+            const codes = localCoupons.map((c) => c.code);
+            const { data: validCoupons } = await supabase
+              .from("coupons")
+              .select("code, discount_percent, created_at, is_used")
+              .in("code", codes)
+              .eq("is_used", false);
+
+            if (isMounted && validCoupons) {
+              setMyCoupons(validCoupons);
+              localStorage.setItem("badem_saved_coupons", JSON.stringify(validCoupons));
+            }
+          } else if (isMounted) {
+            setMyCoupons([]);
+          }
+        } catch (storageErr) {
+          console.warn("LocalStorage parse error:", storageErr);
+        }
+      } catch (err) {
+        console.error("Error loading loyalty rewards:", err);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchLoyaltyData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isRewardsOpen]);
 
   if (!isRewardsOpen) return null;
 
@@ -129,12 +144,12 @@ export const RewardsModal: React.FC = () => {
       showToast(isAr ? "رصيد نقاطك غير كافٍ لهذا الخصم ❌" : "Insufficient points ❌", "error");
       return;
     }
-
-    setRedeemingId(reward.id);
+setRedeemingId(reward.id);
     try {
-      const generatedCode = `BADEM-${reward.discount_percent}-${Math.floor(1000 + Math.random() * 9000)}`;
+      // ✅ استدعاء الدالة الخارجية بأمان تام
+      const generatedCode = generateCouponCode(reward.discount_percent);
 
-      // 1. إنشاء الكوبون في Supabase
+      // 1. تسجيل الكوبون في جدول الكوبونات
       const { error: insertError } = await supabase.from("coupons").insert([
         {
           code: generatedCode,
@@ -144,12 +159,13 @@ export const RewardsModal: React.FC = () => {
         },
       ]);
 
+
       if (insertError) throw insertError;
 
-      // 2. خصم النقاط من رصيد العميل
+      // 2. خصم النقاط من رصيد المستخدم
       redeemPoints(reward.points_required);
 
-      // 3. حفظ الكوبون في المحفظة المحلية
+      // 3. إضافة الكوبون للمحفظة المحلية وتحديث الواجهة
       const newSavedCoupon: SavedCoupon = {
         code: generatedCode,
         discount_percent: reward.discount_percent,
@@ -161,7 +177,7 @@ export const RewardsModal: React.FC = () => {
       try {
         localStorage.setItem("badem_saved_coupons", JSON.stringify(updatedList));
       } catch {
-        // تجاهل أخطاء مساحة التخزين الصامتة
+        // تجاوز صامت في حال امتلاء مساحة التخزين المحلية
       }
 
       showToast(

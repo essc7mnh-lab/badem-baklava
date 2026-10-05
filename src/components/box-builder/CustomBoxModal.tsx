@@ -14,7 +14,8 @@ import {
   RotateCcw,
   Search,
   Sparkles,
-  PackageX
+  PackageX,
+  Layers
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useCart } from "@/context/CartContext";
@@ -36,13 +37,34 @@ interface ProductItem {
   image?: string;
   category?: string;
   category_ar?: string;
+  category_id?: string | number;
+  is_available?: boolean;
+  in_stock?: boolean;
+  is_active?: boolean;
+  stock_status?: string;
+  stock?: number;
+  stock_quantity?: number;
+  [key: string]: unknown;
 }
 
 interface BoxSettings {
   pricing_mode: "dynamic" | "fixed";
   packaging_fee: number;
   is_enabled: boolean;
+  allowed_categories: string[];
 }
+
+// 🛡️ فحص ذكي وشامل لحالة التوفر لاستبعاد المنتجات النافذة
+const isProductInStock = (prod: ProductItem): boolean => {
+  if (prod.is_available === false || (prod as unknown as Record<string, unknown>).is_available === "false" || (prod as unknown as Record<string, unknown>).is_available === 0) return false;
+  if (prod.in_stock === false || (prod as unknown as Record<string, unknown>).in_stock === "false" || (prod as unknown as Record<string, unknown>).in_stock === 0) return false;
+  if (prod.is_active === false || (prod as unknown as Record<string, unknown>).is_active === "false" || (prod as unknown as Record<string, unknown>).is_active === 0) return false;
+  if (prod.stock_status === "out_of_stock" || (prod as unknown as Record<string, unknown>).status === "out_of_stock") return false;
+  if ((prod as unknown as Record<string, unknown>).out_of_stock === true) return false;
+  if (typeof prod.stock === "number" && prod.stock <= 0) return false;
+  if (typeof prod.stock_quantity === "number" && prod.stock_quantity <= 0) return false;
+  return true;
+};
 
 export const CustomBoxModal: React.FC = () => {
   const { isMenuOpen, setIsMenuOpen } = useUser();
@@ -50,18 +72,19 @@ export const CustomBoxModal: React.FC = () => {
   const { language } = useLanguage();
   const isAr = language === "ar";
 
-  // تهيئة الحالة بقائمة فارغة لضمان عدم فرض بوكسات افتراضية عند تعطيل الكل
   const [tiers, setTiers] = useState<BoxTier[]>([]);
   const [selectedTier, setSelectedTier] = useState<BoxTier | null>(null);
   const [availableProducts, setAvailableProducts] = useState<ProductItem[]>([]);
   const [boxSelections, setBoxSelections] = useState<Record<string, number>>({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
 
   const [boxSettings, setBoxSettings] = useState<BoxSettings>({
     pricing_mode: "dynamic",
     packaging_fee: 0,
     is_enabled: true,
+    allowed_categories: [],
   });
 
   useEffect(() => {
@@ -81,7 +104,7 @@ export const CustomBoxModal: React.FC = () => {
     };
   }, [isMenuOpen, setIsMenuOpen]);
 
-  // 🎯 جلب المقاسات الفعالة والاعتماد المباشر على قرار لوحة التحكم
+  // 🎯 استدعاء وفلترة الأقسام والمنتجات بحماية هندسية صارمة وخالية من الأخطاء
   useEffect(() => {
     if (!isMenuOpen) return;
 
@@ -94,35 +117,111 @@ export const CustomBoxModal: React.FC = () => {
           { data: settingsData },
           { data: tiersData },
           { data: prodsData, error: prodsErr },
+          { data: catsData }
         ] = await Promise.all([
           supabase.from("box_builder_settings").select("*").eq("id", "default").maybeSingle(),
           supabase.from("custom_box_tiers").select("*").eq("is_active", true).order("capacity", { ascending: true }),
           supabase.from("products").select("*"),
+          supabase.from("categories").select("*"),
         ]);
 
         if (isMounted) {
+          // 1. الأقسام المعتمدة من لوحة التحكم
+          const allowedCats: string[] = Array.isArray(settingsData?.allowed_categories)
+            ? settingsData.allowed_categories
+            : [];
+
           if (settingsData) {
             setBoxSettings({
               pricing_mode: settingsData.pricing_mode || "dynamic",
               packaging_fee: Number(settingsData.packaging_fee) || 0,
               is_enabled: settingsData.is_enabled ?? true,
+              allowed_categories: allowedCats,
             });
           }
 
-          // اعتماد ما في القاعدة مباشرة (إن عُطّل الكل تصبح القائمة فارغة [])
+          // 2. مقاسات البوكسات
           const activeTiers = tiersData || [];
           setTiers(activeTiers);
-
-          if (activeTiers.length > 0) {
-            setSelectedTier(activeTiers[0]);
-          } else {
-            setSelectedTier(null);
-          }
+          setSelectedTier(activeTiers.length > 0 ? activeTiers[0] : null);
 
           if (prodsErr) {
             console.error("Error loading products:", prodsErr);
           } else if (prodsData && prodsData.length > 0) {
-            setAvailableProducts(prodsData);
+            
+            // 3. استبعاد الأصناف النافذة أولاً
+            const inStockProds = (prodsData as ProductItem[]).filter(isProductInStock);
+
+            // 4. الفلترة الهندسية الذكية
+            if (allowedCats.length > 0 && catsData && Array.isArray(catsData)) {
+              
+              // أ) بناء بيانات الأقسام المعتمدة والأقسام المستبعدة
+              const allowedKeys = new Set<string>();
+              const disallowedKeys = new Set<string>();
+
+              catsData.forEach((c: { 
+                id?: string | number; 
+                name_ar?: string; 
+                title_ar?: string; 
+                name?: string; 
+                title?: string;
+                slug?: string;
+              }) => {
+                const cNameAr = String(c.name_ar || c.title_ar || c.name || c.title || "").trim();
+                const cSlug = String(c.slug || "").trim();
+                const cId = String(c.id || "").trim();
+
+                const isAllowed = 
+                  allowedCats.includes(cNameAr) || 
+                  allowedCats.includes(cSlug) || 
+                  allowedCats.includes(cId) ||
+                  allowedCats.some((a) => a.includes(cNameAr) || cNameAr.includes(a));
+
+                const targetSet = isAllowed ? allowedKeys : disallowedKeys;
+
+                if (cId) targetSet.add(cId.toLowerCase());
+                if (cSlug) targetSet.add(cSlug.toLowerCase());
+                if (cNameAr) {
+                  targetSet.add(cNameAr.toLowerCase());
+                  targetSet.add(cNameAr.replace(/^(قسم|section)\s+/gi, "").trim().toLowerCase());
+                }
+              });
+
+              // ب) تصفية المنتجات بطريقة مزدوجة (اعتماد المسموح + طرد المستبعد)
+              const strictlyFiltered = inStockProds.filter((p) => {
+                // استخراج كافة المعرفات والمسميات الممكنة للصنف
+                const pCatId = String(p.category_id || p.categoryId || p.cat_id || "").trim().toLowerCase();
+                const pCatName = String(p.category_ar || p.category || p.category_name || "").trim().toLowerCase();
+                const pCleanName = pCatName.replace(/^(قسم|section)\s+/gi, "").trim();
+
+                // 1. إذا كان الصنف يتبع قسماً مستبعداً (مثل المشروبات)، يُرفض فوراً
+                const isExplicitlyDisallowed = 
+                  (pCatId && disallowedKeys.has(pCatId)) ||
+                  (pCatName && disallowedKeys.has(pCatName)) ||
+                  (pCleanName && disallowedKeys.has(pCleanName));
+
+                if (isExplicitlyDisallowed) return false;
+
+                // 2. إذا كان يطابق الأقسام المعتمدة، يُقبل فوراً
+                const isExplicitlyAllowed = 
+                  (pCatId && allowedKeys.has(pCatId)) ||
+                  (pCatName && allowedKeys.has(pCatName)) ||
+                  (pCleanName && allowedKeys.has(pCleanName));
+
+                if (isExplicitlyAllowed) return true;
+
+                // 3. فحص أمان أخير: استبعاد المشروبات بالاسم إذا لم تكن ضمن الأقسام المختارة
+                const pTitle = String(p.title_ar || p.name_ar || p.title || "").trim();
+                const isDrinkItem = /شاي|قهوة|قهوه|ماء|مشروب|بيبسي|عصير/i.test(pTitle);
+                if (isDrinkItem && disallowedKeys.size > 0) return false;
+
+                return true;
+              });
+
+              setAvailableProducts(strictlyFiltered);
+            } else {
+              setAvailableProducts(inStockProds);
+            }
           }
         }
       } catch (err) {
@@ -153,6 +252,16 @@ export const CustomBoxModal: React.FC = () => {
     [isAr]
   );
 
+  // شريط الأقسام المتاحة للتنقل السريع
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    availableProducts.forEach((p) => {
+      const cat = isAr ? (p.category_ar || p.category) : (p.category || p.category_ar);
+      if (cat && cat.trim()) cats.add(cat.trim());
+    });
+    return Array.from(cats);
+  }, [availableProducts, isAr]);
+
   const currentCount = useMemo(() => {
     return Object.values(boxSelections).reduce((sum, count) => sum + count, 0);
   }, [boxSelections]);
@@ -176,14 +285,27 @@ export const CustomBoxModal: React.FC = () => {
     return Number(selectedTier.price);
   }, [boxSettings, itemsTotalPrice, selectedTier]);
 
+  // تصفية المنتجات حسب القسم والبحث
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return availableProducts;
-    const query = searchQuery.toLowerCase().trim();
-    return availableProducts.filter((prod) => {
-      const name = getProductName(prod).toLowerCase();
-      return name.includes(query);
-    });
-  }, [availableProducts, searchQuery, getProductName]);
+    let list = availableProducts;
+
+    if (selectedCategory !== "all") {
+      list = list.filter((prod) => {
+        const cat = isAr ? (prod.category_ar || prod.category) : (prod.category || prod.category_ar);
+        return cat === selectedCategory;
+      });
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      list = list.filter((prod) => {
+        const name = getProductName(prod).toLowerCase();
+        return name.includes(query);
+      });
+    }
+
+    return list;
+  }, [availableProducts, selectedCategory, searchQuery, getProductName, isAr]);
 
   const handleAdd = (id: string | number) => {
     const strId = String(id);
@@ -255,7 +377,7 @@ export const CustomBoxModal: React.FC = () => {
 
       <div className="relative w-full max-w-2xl bg-[#FAF5ED] rounded-t-3xl sm:rounded-3xl border border-[#4A0E17]/20 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col z-10 animate-in slide-in-from-bottom duration-300">
         
-        {/* الترويسة */}
+        {/* الترويسة الفاخرة */}
         <div className="p-4 sm:p-5 border-b border-[#C59B27]/30 bg-[#4A0E17] text-white flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#C59B27]/20 border border-[#C59B27]/40 text-[#E5C058] flex items-center justify-center shadow-inner">
@@ -293,11 +415,10 @@ export const CustomBoxModal: React.FC = () => {
           <div className="p-16 flex flex-col items-center justify-center gap-2 text-stone-400">
             <Loader2 className="w-8 h-8 animate-spin text-[#4A0E17]" />
             <span className="text-xs font-bold text-stone-600">
-              {isAr ? "جاري تحميل تفاصيل البوكسات..." : "Loading box options..."}
+              {isAr ? "جاري تحميل تفاصيل البوكسات والأصناف المتوفرة..." : "Loading available box items..."}
             </span>
           </div>
         ) : tiers.length === 0 || !boxSettings.is_enabled || !selectedTier ? (
-          /* 🛡️ واجهة التوقف المهنية عند تعطيل جميع المقاسات من لوحة التحكم */
           <div className="p-12 sm:p-16 text-center space-y-4 my-auto">
             <div className="w-16 h-16 rounded-3xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center mx-auto border border-[#C59B27]/30 shadow-inner">
               <PackageX className="w-8 h-8 text-[#C59B27]" />
@@ -321,11 +442,10 @@ export const CustomBoxModal: React.FC = () => {
             </button>
           </div>
         ) : (
-          /* واجهة التشكيل الكاملة عند وجود بوكسات مفعلة */
           <>
             <div className="p-4 sm:p-5 overflow-y-auto no-scrollbar space-y-4 sm:space-y-5">
               
-              {/* 1. اختيار الحجم */}
+              {/* 1. اختيار الحجم والسعة */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black text-[#4A0E17] flex items-center gap-1.5">
@@ -394,7 +514,7 @@ export const CustomBoxModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* 2. مؤشر الامتلاء */}
+              {/* 2. مؤشر الامتلاء التفاعلي */}
               <div className="bg-white p-3.5 rounded-2xl border border-stone-200/80 shadow-2xs space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-black">
                   <span className="text-stone-800 flex items-center gap-1.5">
@@ -469,7 +589,7 @@ export const CustomBoxModal: React.FC = () => {
                 )}
               </div>
 
-              {/* 3. الأصناف */}
+              {/* 3. تحديد الأصناف والتشكيلة */}
               <div className="space-y-2.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <label className="text-xs font-black text-[#4A0E17] flex items-center gap-1.5">
@@ -485,20 +605,52 @@ export const CustomBoxModal: React.FC = () => {
                   )}
                 </div>
 
+                {/* شريط تبويبات الأقسام السريع */}
+                {availableCategories.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategory("all")}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
+                        selectedCategory === "all"
+                          ? "bg-[#4A0E17] text-white border-[#4A0E17] shadow-xs"
+                          : "bg-white text-stone-600 border-stone-200 hover:border-[#4A0E17]/40"
+                      }`}
+                    >
+                      {isAr ? "جميع الأصناف" : "All Items"}
+                    </button>
+                    {availableCategories.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
+                          selectedCategory === cat
+                            ? "bg-[#4A0E17] text-white border-[#4A0E17] shadow-xs"
+                            : "bg-white text-stone-600 border-stone-200 hover:border-[#4A0E17]/40"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* حقل البحث السريع */}
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3.5 h-3.5 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 rtl:right-3 rtl:left-auto ltr:left-3 ltr:right-auto pointer-events-none" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={isAr ? "ابحث عن نوع بقلاوة معين (برمة، شوكولاتة، أصابع...)" : "Search sweets..."}
-                    className="w-full bg-white border border-stone-200 rounded-xl pr-8 pl-3 py-2 text-xs font-bold text-stone-800 placeholder:text-stone-400 focus:outline-hidden focus:border-[#4A0E17] transition"
+                    placeholder={isAr ? "ابحث عن نوع معين (برمة، شوكولاتة، أصابع...)" : "Search sweets..."}
+                    className="w-full bg-white border border-stone-200 rounded-xl pr-8 pl-3 rtl:pr-8 rtl:pl-3 ltr:pl-8 ltr:pr-3 py-2 text-xs font-bold text-stone-800 placeholder:text-stone-400 focus:outline-hidden focus:border-[#4A0E17] transition"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery("")}
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs"
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 rtl:left-2.5 rtl:right-auto ltr:right-2.5 ltr:left-auto text-stone-400 hover:text-stone-600 text-xs cursor-pointer"
                     >
                       ✕
                     </button>
@@ -506,8 +658,9 @@ export const CustomBoxModal: React.FC = () => {
                 </div>
 
                 {filteredProducts.length === 0 ? (
-                  <div className="p-6 bg-white rounded-2xl border border-stone-200 text-center text-xs text-stone-500 font-bold">
-                    {isAr ? "لم نجد أصنافاً مطابقة للبحث." : "No matching sweets found."}
+                  <div className="p-8 bg-white rounded-2xl border border-stone-200 text-center text-xs text-stone-400 font-bold space-y-1">
+                    <Layers className="w-8 h-8 text-stone-300 mx-auto mb-1 stroke-1" />
+                    <p>{isAr ? "لا توجد أصناف متوفرة مطابقة حالياً." : "No matching items currently available."}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[36vh] overflow-y-auto no-scrollbar pr-0.5">

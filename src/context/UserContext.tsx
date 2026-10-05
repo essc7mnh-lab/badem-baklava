@@ -63,6 +63,8 @@ interface OrderPayloadRow {
   total_amount?: string | number;
 }
 
+export type ProfileTabType = "info" | "orders" | "addresses";
+
 interface UserContextType {
   userName: string;
   setUserName: (name: string) => void;
@@ -78,7 +80,8 @@ interface UserContextType {
   addOrder: (order: NewOrderInput) => Promise<void>;
   resetAllUserData: () => void;
   syncPointsWithDatabase: () => Promise<void>;
-  // النوافذ
+  
+  // النوافذ المنبثقة
   isProfileOpen: boolean;
   setIsProfileOpen: (open: boolean) => void;
   isRewardsOpen: boolean;
@@ -87,9 +90,18 @@ interface UserContextType {
   setIsNotificationsOpen: (open: boolean) => void;
   isMenuOpen: boolean;
   setIsMenuOpen: (open: boolean) => void;
-  // الإشعارات
+
+  // الربط الذكي والتوجيه بين الإشعار والملف الشخصي
+  activeProfileTab: ProfileTabType;
+  setActiveProfileTab: (tab: ProfileTabType) => void;
+  targetOrderId: string | null;
+  setTargetOrderId: (id: string | null) => void;
+  openOrderTracking: (orderId: string, notificationId?: string) => void;
+
+  // إدارة الإشعارات
   notifications: AppNotification[];
   unreadNotificationsCount: number;
+  markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
   clearNotifications: () => void;
 }
@@ -118,6 +130,10 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isRewardsOpen, setIsRewardsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // حالات الربط الذكي
+  const [activeProfileTab, setActiveProfileTab] = useState<ProfileTabType>("info");
+  const [targetOrderId, setTargetOrderId] = useState<string | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -209,7 +225,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       osc.start(now);
       osc.stop(now + 0.55);
     } catch {
-      // تجاهل الحظر التلقائي من المتصفح
+      // تجاوز صامت في حال منع المتصفح للصوت التلقائي
     }
   }, []);
 
@@ -232,7 +248,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [playNotificationSound]
   );
 
-  // مزامنة النقاط مع قاعدة البيانات
+  // مزامنة رصيد النقاط مع قاعدة البيانات
   const syncPointsWithDatabase = useCallback(async () => {
     const cleanPhone = userPhone.trim();
     if (!cleanPhone) {
@@ -271,7 +287,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [userPhone]);
 
-  // الاشتراك اللحظي في تحديثات الطلبات
+  // ⚡ الاشتراك اللحظي في تحديثات الطلبات وتحديث الحالة الفورية في الذاكرة
   useEffect(() => {
     const cleanPhone = userPhone.trim();
     if (!cleanPhone) return;
@@ -288,21 +304,32 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         async (payload: { new: OrderPayloadRow }) => {
           const updated = payload.new;
           if (updated && updated.customer_phone === cleanPhone) {
-            if (updated.status === "baking") {
+            
+            // 🌟 1. تحديث حالة الطلب فوراً داخل مصفوفة orders في الذاكرة ليتغير لون الكرت فوراً!
+            setOrders((prevOrders) =>
+              prevOrders.map((ord) =>
+                ord.id === updated.id ? { ...ord, status: updated.status } : ord
+              )
+            );
+
+            // 🌟 2. دعم حالات لوحة التحكم بالكامل وإرسال الإشعار المناسب
+            const st = updated.status;
+
+            if (st === "baking" || st === "in_oven" || st === "في الفرن") {
               pushNotification(
                 "🔥 جاري خَبز وتجهيز طلبك",
-                `طلبك رقم #${updated.id} تم تسليمه للشيف وهو الآن في الفرن والتجهيز.`,
+                `طلبك رقم #${updated.id} تم تسليمه للشيف وهو الآن في الفرن والتجهيز الطازج.`,
                 "order",
                 updated.id
               );
-            } else if (updated.status === "delivering") {
+            } else if (st === "delivering" || st === "with_driver" || st === "مع المندوب") {
               pushNotification(
                 "🚚 طلبك خرج مع المندوب",
-                `المندوب استلم طلبك #${updated.id} وهو في طريقه الآن إلى موقعك.`,
+                `المندوب استلم طلبك #${updated.id} وهو في طريقه الآن إلى موقعكم المسجل.`,
                 "order",
                 updated.id
               );
-            } else if (updated.status === "completed") {
+            } else if (st === "completed" || st === "مكتمل") {
               const { data: settings } = await supabase
                 .from("store_settings")
                 .select("points_per_sar")
@@ -315,7 +342,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
               pushNotification(
                 "✅ تم تسليم الطلب وإضافة النقاط!",
-                `تم تسليم طلبك بنجاح، وتمت إضافة ${earnedPts} نقطة مكافأة إلى رصيدك  🎉`,
+                `تم تسليم طلبك بنجاح، وتمت إضافة ${earnedPts} نقطة مكافأة إلى رصيدك 🎉`,
                 "points",
                 updated.id
               );
@@ -332,6 +359,13 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [userPhone, syncPointsWithDatabase, pushNotification]);
 
+  // إدارة قراءة الإشعارات
+  const markNotificationAsRead = useCallback((id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
+  }, []);
+
   const markAllNotificationsAsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   }, []);
@@ -339,6 +373,20 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const clearNotifications = useCallback(() => {
     setNotifications([]);
   }, []);
+
+  // 🎯 الدالة المركزية لربط الإشعار بالطلب والتنقل المباشر
+  const openOrderTracking = useCallback(
+    (orderId: string, notificationId?: string) => {
+      if (notificationId) {
+        markNotificationAsRead(notificationId);
+      }
+      setTargetOrderId(orderId);
+      setActiveProfileTab("orders"); // الانتقال لتبويب الطلبات
+      setIsNotificationsOpen(false); // إغلاق الإشعارات
+      setIsProfileOpen(true);        // فتح الملف الشخصي
+    },
+    [markNotificationAsRead]
+  );
 
   const addPoints = useCallback((amount: number) => {
     setPoints((prev) => prev + amount);
@@ -388,7 +436,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         totalAmount: orderData.totalAmount,
         paymentMethod: orderData.paymentMethod,
         date: formattedDate,
-        status: "pending",
+        status: orderData.status || "pending",
         phone: orderData.phone,
         customerName: orderData.customerName,
       };
@@ -455,8 +503,14 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsNotificationsOpen,
       isMenuOpen,
       setIsMenuOpen,
+      activeProfileTab,
+      setActiveProfileTab,
+      targetOrderId,
+      setTargetOrderId,
+      openOrderTracking,
       notifications,
       unreadNotificationsCount,
+      markNotificationAsRead,
       markAllNotificationsAsRead,
       clearNotifications,
     }),
@@ -477,8 +531,12 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isRewardsOpen,
       isNotificationsOpen,
       isMenuOpen,
+      activeProfileTab,
+      targetOrderId,
+      openOrderTracking,
       notifications,
       unreadNotificationsCount,
+      markNotificationAsRead,
       markAllNotificationsAsRead,
       clearNotifications,
     ]

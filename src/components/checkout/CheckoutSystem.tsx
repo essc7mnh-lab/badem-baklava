@@ -8,7 +8,6 @@ import {
   MapPin,
   CheckCircle2,
   Truck,
-  Clock,
   ShieldCheck,
   ArrowRight,
   ArrowLeft,
@@ -89,7 +88,15 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
 
   // بيانات العميل والعنوان
-  const { userName, setUserName, userPhone, setUserPhone, addOrder } = useUser();
+const { 
+  userName, 
+  setUserName, 
+  userPhone, 
+  setUserPhone, 
+  addOrder, 
+  addresses = [], 
+  addAddress 
+} = useUser();
   const [currentStep, setCurrentStep] = useState<Step>("details");
   const [customerName, setCustomerName] = useState(userName || "");
   const [phone, setPhone] = useState(userPhone || "");
@@ -152,29 +159,26 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
   // تتبع الطلب ورابط الواتساب
   const [orderId, setOrderId] = useState("");
-  const [trackingProgress, setTrackingProgress] = useState(1);
   const [backupWhatsAppUrl, setBackupWhatsAppUrl] = useState<string | null>(null);
-  const etaMinutes = deliveryMode === "delivery" ? 40 : 20;
-
-  // مزامنة بيانات المستخدم المسجلة تلقائياً
+  
+// مزامنة بيانات المستخدم وعنوانه المسجل تلقائياً
   useEffect(() => {
     const timer = setTimeout(() => {
       if (userName && !customerName) setCustomerName(userName);
       if (userPhone && !phone) setPhone(userPhone);
+
+      // 📍 تعبئة العنوان المسجل تلقائياً إذا كانت الحقول فارغة
+      if (addresses.length > 0 && !district && !street) {
+        const primaryAddress = addresses[0];
+        if (primaryAddress.city) setCity(primaryAddress.city);
+        if (primaryAddress.district) setDistrict(primaryAddress.district);
+        if (primaryAddress.street) setStreet(primaryAddress.street);
+      }
     }, 0);
 
     return () => clearTimeout(timer);
-  }, [userName, userPhone, customerName, phone]);
+  }, [userName, userPhone, customerName, phone, addresses, district, street]);
 
-  // محاكاة مراحل تحضير الطلب في شاشة التتبع
-  useEffect(() => {
-    if (currentStep === "tracking") {
-      const interval = setInterval(() => {
-        setTrackingProgress((prev) => (prev < 4 ? prev + 1 : prev));
-      }, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [currentStep]);
 
   if (!isOpen) return null;
 
@@ -371,6 +375,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
       return;
     }
 
+
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
         alert(isAr ? "عذراً، التوصيل متاح حالياً داخل مدينة الرياض فقط." : "Delivery is currently available in Riyadh only.");
@@ -388,6 +393,8 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
     setUserName(customerName.trim());
     setUserPhone(phone.trim());
+
+    
 
     const isValid = await validateCouponSecurity(phone.trim());
 
@@ -672,6 +679,23 @@ ${payMethodTitle}
           paymentMethod: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         });
       }
+// 📍 فحص وحفظ العنوان تلقائياً في الملف الشخصي إذا لم يكن مسجلاً مسبقاً
+      if (deliveryMode === "delivery" && district.trim() && street.trim()) {
+        const isAddressAlreadySaved = addresses.some(
+          (a) =>
+            a.district?.trim().toLowerCase() === district.trim().toLowerCase() &&
+            a.street?.trim().toLowerCase() === street.trim().toLowerCase()
+        );
+
+        if (!isAddressAlreadySaved && typeof addAddress === "function") {
+          addAddress({
+            title: isAr ? "عنوان التوصيل" : "Delivery Address",
+            city: city.trim() || "الرياض",
+            district: district.trim(),
+            street: street.trim(),
+          });
+        }
+      }
 
       clearCart();
     } catch (err: unknown) {
@@ -846,17 +870,43 @@ ${payMethodTitle}
                     />
                   </div>
                 </div>
-
-                {/* 🌟 3. تفاصيل موقع التوصيل محصورة في الرياض */}
+{/* 🌟 3. تفاصيل موقع التوصيل محصورة في الرياض */}
                 {deliveryMode === "delivery" ? (
                   <div className="space-y-3 pt-2 border-t border-stone-100 animate-in fade-in duration-200">
+                    
+                    {/* ✅ شريط العناوين المحفوظة كسطر مستقل مريح */}
+                    {addresses.length > 0 && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        <span className="text-[10px] text-stone-400 font-bold shrink-0">عناوينك المحفوظة:</span>
+                        {addresses.map((addr, i) => (
+                          <button
+                            key={addr.id || i}
+                            type="button"
+                            onClick={() => {
+                              setCity(addr.city || "الرياض");
+                              setDistrict(addr.district);
+                              setStreet(addr.street);
+                            }}
+                            className={`px-2.5 py-1 rounded-xl text-[10.5px] font-bold border transition cursor-pointer shrink-0 ${
+                              district === addr.district
+                                ? "bg-[#4A0E17] text-white border-[#4A0E17] shadow-xs"
+                                : "bg-white text-stone-700 border-stone-200 hover:border-[#4A0E17]/40"
+                            }`}
+                          >
+                            📍 {addr.title} ({addr.district})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* سطر الترويسة وزر الـ GPS بشكل متوازن */}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
                         <MapPin className="w-4 h-4 text-[#C59B27]" />
                         <span>تفاصيل موقع التوصيل (الرياض):</span>
                       </span>
 
-                      {/* زر تحديد الموقع بالـ GPS البارز */}
+                      {/* زر تحديد الموقع بالـ GPS */}
                       <button
                         type="button"
                         onClick={handleGetLocation}
@@ -1286,62 +1336,73 @@ ${payMethodTitle}
                   </div>
                 )}
               </div>
-
-              <div className="bg-white p-5 rounded-2xl border border-stone-200 space-y-4 shadow-2xs">
-                <div className="flex items-center justify-between text-xs font-bold text-stone-800 border-b border-stone-100 pb-2">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-[#4A0E17]" />
-                    <span>الوقت التقديري المتوقع:</span>
+<div className="bg-white p-5 rounded-2xl border border-stone-200 space-y-4 shadow-2xs">
+                {/* 🌟 شريط الحالة الرسمية بدلاً من عداد الدقائق */}
+                <div className="flex items-center justify-between text-xs font-bold border-b border-stone-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+                    </span>
+                    <span className="text-stone-700">حالة الطلب:</span>
+                    <span className="text-emerald-700 font-black">مؤكد • جاري التحضير الآن</span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-stone-400">
+                    #{orderId}
                   </span>
-                  <span className="text-[#4A0E17] font-black text-sm">{etaMinutes} دقيقة</span>
                 </div>
 
-                <div className="space-y-3 pt-2">
+                {/* 🌟 المحطات الثلاث المتناسقة فقط (تم دمج التغليف مع التحضير وحذف الخطوة الزائدة) */}
+                <div className="space-y-4 pt-1">
+                  
+                  {/* المحطة 1: تم استلام الطلب وتوثيقه (مكتملة ومؤكدة) */}
                   <div className="flex items-start gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${trackingProgress >= 1 ? "bg-[#4A0E17] text-white" : "bg-stone-200 text-stone-500"}`}>
-                      1
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
+                      <Check className="w-4 h-4 stroke-[3]" />
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">تم تسجيل الطلب وتوليد الفاتورة</h5>
-                      <p className="text-[10px] text-stone-500">تم توثيق بياناتك وحجز الأصناف.</p>
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-black text-stone-900">تم تسجيل الطلب وتوثيق الفاتورة</h5>
+                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md">مكتمل</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 mt-0.5">تم حجز الأصناف وإصدار الفاتورة الرسمية بنجاح.</p>
                     </div>
                   </div>
 
+                  {/* المحطة 2: الخَبز والتجهيز الطازج مع التغليف (قيد العمل حالياً) */}
                   <div className="flex items-start gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${trackingProgress >= 2 ? "bg-[#4A0E17] text-white" : "bg-stone-200 text-stone-500"}`}>
+                    <div className="w-7 h-7 rounded-full bg-[#4A0E17] text-[#E5C058] flex items-center justify-center text-xs font-black shrink-0 shadow-xs ring-4 ring-[#4A0E17]/10">
                       2
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">الخَبز والتجهيز الطازج</h5>
-                      <p className="text-[10px] text-stone-500">سمن بلدي نقي وفستق عنتابي فاخر.</p>
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-black text-[#4A0E17]"> التحضير الطازج</h5>
+                        <span className="text-[10px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">جاري التجهيز</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 mt-0.5">إعداد البقلاوة بالسمن والفسق وتجهيز كرت الإهداء والتغليف.</p>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${trackingProgress >= 3 ? "bg-[#4A0E17] text-white" : "bg-stone-200 text-stone-500"}`}>
+                  {/* المحطة 3: التوصيل / الاستلام (المرحلة القادمة) */}
+                  <div className="flex items-start gap-3 opacity-60">
+                    <div className="w-7 h-7 rounded-full bg-stone-100 text-stone-400 border border-stone-300 flex items-center justify-center text-xs font-bold shrink-0">
                       3
                     </div>
                     <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">التغليف الفاخر</h5>
-                      <p className="text-[10px] text-stone-500">تغليف البوكس الحريري مع كرت الإهداء.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${trackingProgress >= 4 ? "bg-emerald-600 text-white animate-bounce" : "bg-stone-200 text-stone-500"}`}>
-                      4
-                    </div>
-                    <div className="flex-1">
-                      <h5 className="text-xs font-bold text-stone-900">
-                        {deliveryMode === "delivery" ? "المندوب في طريقه إليك" : "جاهز للاستلام من الفرع"}
-                      </h5>
-                      <p className="text-[10px] text-stone-500">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-bold text-stone-700">
+                          {deliveryMode === "delivery" ? "التسليم مع المندوب" : "جاهز للاستلام من الفرع"}
+                        </h5>
+                        <span className="text-[10px] text-stone-400 font-medium">بانتظار التجهيز</span>
+                      </div>
+                      <p className="text-[10px] text-stone-400 mt-0.5">
                         {deliveryMode === "delivery"
-                          ? `المندوب متوجه لعنوانكم في حي ${district || "المحدد"}.`
-                          : "طلبكم الفاخر بانتظاركم داخل فرع بادَم."}
+                          ? `الانطلاق مباشرة لعنوانكم في حي (${district || "المحدد"}).`
+                          : "استلام بوكسكم الفاخر مباشرة من فرع بادَم."}
                       </p>
                     </div>
                   </div>
+
                 </div>
               </div>
             </div>
