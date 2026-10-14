@@ -33,6 +33,7 @@ interface ProductItem {
   name_en?: string; 
   base_price?: number;
   price?: number;
+  price_250g?: number;
   image_url?: string;
   image?: string;
   category?: string;
@@ -60,7 +61,7 @@ const isProductInStock = (prod: ProductItem): boolean => {
   if (prod.in_stock === false || (prod as unknown as Record<string, unknown>).in_stock === "false" || (prod as unknown as Record<string, unknown>).in_stock === 0) return false;
   if (prod.is_active === false || (prod as unknown as Record<string, unknown>).is_active === "false" || (prod as unknown as Record<string, unknown>).is_active === 0) return false;
   if (prod.stock_status === "out_of_stock" || (prod as unknown as Record<string, unknown>).status === "out_of_stock") return false;
-  if ((prod as unknown as Record<string, unknown>).out_of_stock === true) return false;
+  if ((prod as unknown as Record<string, unknown>).out_of_stock === true || (prod as unknown as Record<string, unknown>).is_out_of_stock === true || (prod as unknown as Record<string, unknown>).isOutOfStock === true) return false;
   if (typeof prod.stock === "number" && prod.stock <= 0) return false;
   if (typeof prod.stock_quantity === "number" && prod.stock_quantity <= 0) return false;
   return true;
@@ -152,13 +153,16 @@ export const CustomBoxModal: React.FC = () => {
             // 3. استبعاد الأصناف النافذة أولاً
             const inStockProds = (prodsData as ProductItem[]).filter(isProductInStock);
 
-            // 4. الفلترة الهندسية الذكية
-            if (allowedCats.length > 0 && catsData && Array.isArray(catsData)) {
-              
-              // أ) بناء بيانات الأقسام المعتمدة والأقسام المستبعدة
-              const allowedKeys = new Set<string>();
-              const disallowedKeys = new Set<string>();
+            // هل قام المدير بتفعيل قسم المشروبات صراحةً في لوحة التحكم؟
+            const drinksExplicitlyAllowed = allowedCats.some((c) =>
+              /مشروب|مشروبات|شاي|قهوة|قهوه|drinks|beverages/i.test(String(c))
+            );
 
+            // 4. الفلترة الهندسية الذكية
+            const allowedKeys = new Set<string>();
+            const disallowedKeys = new Set<string>();
+
+            if (allowedCats.length > 0 && catsData && Array.isArray(catsData)) {
               catsData.forEach((c: { 
                 id?: string | number; 
                 name_ar?: string; 
@@ -186,15 +190,21 @@ export const CustomBoxModal: React.FC = () => {
                   targetSet.add(cNameAr.replace(/^(قسم|section)\s+/gi, "").trim().toLowerCase());
                 }
               });
+            }
 
-              // ب) تصفية المنتجات بطريقة مزدوجة (اعتماد المسموح + طرد المستبعد)
-              const strictlyFiltered = inStockProds.filter((p) => {
-                // استخراج كافة المعرفات والمسميات الممكنة للصنف
-                const pCatId = String(p.category_id || p.categoryId || p.cat_id || "").trim().toLowerCase();
-                const pCatName = String(p.category_ar || p.category || p.category_name || "").trim().toLowerCase();
-                const pCleanName = pCatName.replace(/^(قسم|section)\s+/gi, "").trim();
+            const strictlyFiltered = inStockProds.filter((p) => {
+              const pCatId = String(p.category_id || p.categoryId || p.cat_id || "").trim().toLowerCase();
+              const pCatName = String(p.category_ar || p.category || p.category_name || "").trim().toLowerCase();
+              const pCleanName = pCatName.replace(/^(قسم|section)\s+/gi, "").trim();
+              const pTitle = String(p.title_ar || p.name_ar || p.title || "").trim();
 
-                // 1. إذا كان الصنف يتبع قسماً مستبعداً (مثل المشروبات)، يُرفض فوراً
+              // استبعاد المشروبات تلقائياً ما لم تكن مفعلة صراحةً من لوحة التحكم
+              const isDrinkItem = /شاي|قهوة|قهوه|ماء|مشروب|مشروبات|بيبسي|عصير|كركديه|موهيتو|tea|coffee|drink|water|beverage/i.test(
+                `${pTitle} ${pCatName}`
+              );
+              if (isDrinkItem && !drinksExplicitlyAllowed) return false;
+
+              if (allowedCats.length > 0) {
                 const isExplicitlyDisallowed = 
                   (pCatId && disallowedKeys.has(pCatId)) ||
                   (pCatName && disallowedKeys.has(pCatName)) ||
@@ -202,26 +212,20 @@ export const CustomBoxModal: React.FC = () => {
 
                 if (isExplicitlyDisallowed) return false;
 
-                // 2. إذا كان يطابق الأقسام المعتمدة، يُقبل فوراً
                 const isExplicitlyAllowed = 
                   (pCatId && allowedKeys.has(pCatId)) ||
                   (pCatName && allowedKeys.has(pCatName)) ||
-                  (pCleanName && allowedKeys.has(pCleanName));
+                  (pCleanName && allowedKeys.has(pCleanName)) ||
+                  allowedCats.some((a) => pCatName.includes(a.toLowerCase()) || a.toLowerCase().includes(pCleanName));
 
                 if (isExplicitlyAllowed) return true;
+                if (allowedKeys.size > 0) return false;
+              }
 
-                // 3. فحص أمان أخير: استبعاد المشروبات بالاسم إذا لم تكن ضمن الأقسام المختارة
-                const pTitle = String(p.title_ar || p.name_ar || p.title || "").trim();
-                const isDrinkItem = /شاي|قهوة|قهوه|ماء|مشروب|بيبسي|عصير/i.test(pTitle);
-                if (isDrinkItem && disallowedKeys.size > 0) return false;
+              return true;
+            });
 
-                return true;
-              });
-
-              setAvailableProducts(strictlyFiltered);
-            } else {
-              setAvailableProducts(inStockProds);
-            }
+            setAvailableProducts(strictlyFiltered);
           }
         }
       } catch (err) {
@@ -239,7 +243,7 @@ export const CustomBoxModal: React.FC = () => {
   }, [isMenuOpen]);
 
   const getProductPrice = useCallback((prod?: ProductItem): number => {
-    return Number(prod?.base_price || prod?.price || 0);
+    return Number(prod?.price_250g || prod?.base_price || prod?.price || 0);
   }, []);
 
   const getProductName = useCallback(
@@ -266,9 +270,26 @@ export const CustomBoxModal: React.FC = () => {
     return Object.values(boxSelections).reduce((sum, count) => sum + count, 0);
   }, [boxSelections]);
 
-  const maxCapacity = selectedTier?.capacity || 0;
+  // ⚖️ حساب الحد الأدنى والأقصى للسعة لدعم المدى المرن للميزان (مثل: 6 - 8 قطع)
+  const { minCapacity, maxCapacity } = useMemo(() => {
+    if (!selectedTier) return { minCapacity: 0, maxCapacity: 0 };
+    const cap = Number(selectedTier.capacity) || 0;
+    const sub = String(selectedTier.subtitle_ar || "");
+    const rangeMatch = sub.match(/(\d+)\s*[-–—إلى]+\s*(\d+)/);
+    if (rangeMatch && rangeMatch.length >= 3) {
+      const first = parseInt(rangeMatch[1], 10);
+      const second = parseInt(rangeMatch[2], 10);
+      return {
+        minCapacity: Math.min(first, second),
+        maxCapacity: Math.max(first, second, cap),
+      };
+    }
+    return { minCapacity: cap, maxCapacity: cap };
+  }, [selectedTier]);
+
+  const remainingToMin = Math.max(0, minCapacity - currentCount);
   const remainingSlots = Math.max(0, maxCapacity - currentCount);
-  const isReady = maxCapacity > 0 && currentCount === maxCapacity;
+  const isReady = maxCapacity > 0 && currentCount >= minCapacity && currentCount <= maxCapacity;
 
   const itemsTotalPrice = useMemo(() => {
     return Object.entries(boxSelections).reduce((sum, [id, qty]) => {
@@ -342,6 +363,7 @@ export const CustomBoxModal: React.FC = () => {
     });
 
     const summaryText = structuredItems.map((it) => `${it.quantity}× ${it.productName}`).join(" + ");
+    const boxImage = availableProducts[0]?.image_url || availableProducts[0]?.image || "/hero-baklava.png";
 
     const customBoxPayload = {
       id: `box-${selectedTier.id}-${Date.now()}`,
@@ -352,9 +374,10 @@ export const CustomBoxModal: React.FC = () => {
       title_en: selectedTier.name_en,
       price: finalCalculatedPrice,
       quantity: 1,
-      image_url: availableProducts[0]?.image_url || availableProducts[0]?.image || "/hero-baklava.png",
+      image: boxImage,
+      image_url: boxImage,
       portion: `تشكيلة: ${summaryText}`,
-      portionNote: `بوكس مخصص (${selectedTier.capacity} قطع)${
+      portionNote: `بوكس مخصص (${currentCount} قطع)${
         boxSettings.pricing_mode === "dynamic" && boxSettings.packaging_fee > 0
           ? ` + تغليف ${boxSettings.packaging_fee} ر.س`
           : ""
@@ -520,7 +543,7 @@ export const CustomBoxModal: React.FC = () => {
                   <span className="text-stone-800 flex items-center gap-1.5">
                     <span>{isAr ? "سعة البوكس:" : "Box Capacity:"}</span>
                     <span className="font-mono text-[#4A0E17] bg-[#FAF5ED] px-2 py-0.5 rounded-md border border-stone-200/60">
-                      {currentCount} من {selectedTier.capacity} قطع
+                      {currentCount} من {minCapacity !== maxCapacity ? `${minCapacity}-${maxCapacity}` : maxCapacity} قطع
                     </span>
                   </span>
 
@@ -532,18 +555,26 @@ export const CustomBoxModal: React.FC = () => {
                     {isReady ? (
                       <>
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{isAr ? "البوكس مكتمل ✨" : "Box Complete ✨"}</span>
+                        <span>
+                          {remainingSlots > 0
+                            ? isAr
+                              ? `جاهز (يمكنك إضافة ${remainingSlots} قطع أخرى) ✨`
+                              : `Ready (+${remainingSlots} optional) ✨`
+                            : isAr
+                            ? "البوكس مكتمل ✨"
+                            : "Box Complete ✨"}
+                        </span>
                       </>
                     ) : isAr ? (
-                      `متبقي ${remainingSlots} قطع`
+                      `متبقي ${remainingToMin} قطع للحد الأدنى`
                     ) : (
-                      `${remainingSlots} slots left`
+                      `${remainingToMin} slots left`
                     )}
                   </span>
                 </div>
 
-                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${selectedTier.capacity}, minmax(0, 1fr))` }}>
-                  {Array.from({ length: selectedTier.capacity }).map((_, index) => {
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${maxCapacity}, minmax(0, 1fr))` }}>
+                  {Array.from({ length: maxCapacity }).map((_, index) => {
                     const isFilled = index < currentCount;
                     return (
                       <div
@@ -767,8 +798,8 @@ export const CustomBoxModal: React.FC = () => {
                       ? "إضافة البوكس المخصص للسلة 🛒"
                       : "Add Custom Box to Cart 🛒"
                     : isAr
-                    ? `أكمل ${remainingSlots} قطع لإضافة البوكس`
-                    : `Select ${remainingSlots} more pieces`}
+                    ? `أكمل ${remainingToMin} قطع لإضافة البوكس`
+                    : `Select ${remainingToMin} more pieces`}
                 </span>
               </button>
             </div>
