@@ -68,7 +68,7 @@ interface CartProductItem {
   portionNote?: string;
   type?: string;
   tierId?: string;
-  items?: { quantity: number; [key: string]: unknown }[];
+  items?: { quantity: number; unitPrice?: number; [key: string]: unknown }[];
   summaryText?: string;
   [key: string]: unknown;
 }
@@ -88,15 +88,15 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("delivery");
 
   // بيانات العميل والعنوان
-const { 
-  userName, 
-  setUserName, 
-  userPhone, 
-  setUserPhone, 
-  addOrder, 
-  addresses = [], 
-  addAddress 
-} = useUser();
+  const { 
+    userName, 
+    setUserName, 
+    userPhone, 
+    setUserPhone, 
+    addOrder, 
+    addresses = [], 
+    addAddress 
+  } = useUser();
   const [currentStep, setCurrentStep] = useState<Step>("details");
   const [customerName, setCustomerName] = useState(userName || "");
   const [phone, setPhone] = useState(userPhone || "");
@@ -127,7 +127,6 @@ const {
     });
   }, [subtotal, deliveryMode, discountAmount, city]);
 
-  
   const finalCalculatedTotal = liveFinancials.finalTotal;
 
   // تصفية وفحص اعتماد المدينة
@@ -161,7 +160,7 @@ const {
   const [orderId, setOrderId] = useState("");
   const [backupWhatsAppUrl, setBackupWhatsAppUrl] = useState<string | null>(null);
   
-// مزامنة بيانات المستخدم وعنوانه المسجل تلقائياً
+  // مزامنة بيانات المستخدم وعنوانه المسجل تلقائياً
   useEffect(() => {
     const timer = setTimeout(() => {
       if (userName && !customerName) setCustomerName(userName);
@@ -178,7 +177,6 @@ const {
 
     return () => clearTimeout(timer);
   }, [userName, userPhone, customerName, phone, addresses, district, street]);
-
 
   if (!isOpen) return null;
 
@@ -375,7 +373,6 @@ const {
       return;
     }
 
-
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
         alert(isAr ? "عذراً، التوصيل متاح حالياً داخل مدينة الرياض فقط." : "Delivery is currently available in Riyadh only.");
@@ -393,8 +390,6 @@ const {
 
     setUserName(customerName.trim());
     setUserPhone(phone.trim());
-
-    
 
     const isValid = await validateCouponSecurity(phone.trim());
 
@@ -421,9 +416,11 @@ const {
     setCurrentStep("payment");
   };
 
-  // 📲 صياغة فاتورة الواتساب الفاخرة
+  // 📲 صياغة فاتورة الواتساب الفاخرة مع مطابقة الأسعار المعتمدة
   const createWhatsAppUrl = (
     generatedId: string,
+    verifiedSub: number,
+    verifiedDisc: number,
     finalTotal: number,
     itemsToPrint: Array<{ title: string; portion?: string; quantity: number; price: number }>
   ) => {
@@ -446,7 +443,7 @@ const {
       : "";
 
     const notesText = notes ? `\n📝 *ملاحظات خاصة:* ${notes}\n` : "";
-    const couponText = appliedCouponCode ? `\n🏷️ *كود الخصم المطبق:* ${appliedCouponCode} (خصم: ${discountAmount.toFixed(2)} ر.س)\n` : "";
+    const couponText = appliedCouponCode ? `\n🏷️ *كود الخصم المطبق:* ${appliedCouponCode} (خصم: ${verifiedDisc.toFixed(2)} ر.س)\n` : "";
 
     const payMethodTitle =
       paymentMethod === "bank_transfer"
@@ -466,7 +463,7 @@ ${deliveryModeText}${giftText}${notesText}${couponText}
 ${itemsText}
 
 ━━━━━━━━━━━━━━━━━━━
-📦 *قيمة المنتجات:* ${subtotal.toFixed(2)} ر.س
+📦 *قيمة المنتجات:* ${verifiedSub.toFixed(2)} ر.س
 ${deliveryMode === "delivery" ? "🚚 *رسوم التوصيل:* 35.00 ر.س\n" : "🏪 *رسوم الاستلام:* 0.00 ر.س (مجاناً)\n"}💰 *المبلغ الصافي المطلوب:* *${finalTotal.toFixed(2)} ر.س*
 ━━━━━━━━━━━━━━━━━━━
 💳 *طريقة الدفع:*
@@ -477,7 +474,7 @@ ${payMethodTitle}
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
   };
 
-  // ✅ تأكيد الطلب وحفظه في Supabase بتدقيق مالي صارم
+  // ✅ تأكيد الطلب وحفظه في Supabase مع الحفاظ التام على أسعار الأوزان والبوكسات
   const handleConfirmOrder = async () => {
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
@@ -507,36 +504,57 @@ ${payMethodTitle}
     }> = [];
 
     try {
+      // جلب إعدادات صانع البوكسات لمعرفة نمط التسعير (ثابت أم ديناميكي)
+      const { data: boxSettingsData } = await supabase
+        .from("box_builder_settings")
+        .select("pricing_mode, packaging_fee")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const isDynamicBoxPricing = boxSettingsData?.pricing_mode === "dynamic";
+      const boxPackagingFee = Number(boxSettingsData?.packaging_fee) || 0;
+
       for (const cartItem of cart as CartProductItem[]) {
         if (cartItem.type === "custom_box" || cartItem.tierId) {
           let officialBoxPrice = Number(cartItem.price);
-          let officialCapacity = 0;
+          let maxCapacity = 0;
+          let minCapacity = 0;
 
           const { data: tierData } = await supabase
             .from("custom_box_tiers")
-            .select("price, capacity, name_ar")
+            .select("price, capacity, name_ar, subtitle_ar")
             .eq("id", cartItem.tierId)
             .maybeSingle();
 
           if (tierData) {
-            officialBoxPrice = Number(tierData.price);
-            officialCapacity = Number(tierData.capacity);
-          } else {
-            const fallbackTiers: Record<string, { price: number; capacity: number }> = {
-              box_500g: { price: 45, capacity: 4 },
-              box_1000g: { price: 85, capacity: 8 },
-              box_1500g: { price: 125, capacity: 12 },
-            };
-            if (cartItem.tierId && fallbackTiers[cartItem.tierId]) {
-              officialBoxPrice = fallbackTiers[cartItem.tierId].price;
-              officialCapacity = fallbackTiers[cartItem.tierId].capacity;
+            maxCapacity = Number(tierData.capacity) || 0;
+            minCapacity = maxCapacity;
+
+            // فحص المدى المرن لعدد القطع في الميزان (مثلاً: "6 - 8 قطعة")
+            const sub = String(tierData.subtitle_ar || "");
+            const rangeMatch = sub.match(/(\d+)\s*[-–—إلى]+\s*(\d+)/);
+            if (rangeMatch && rangeMatch.length >= 3) {
+              const first = parseInt(rangeMatch[1], 10);
+              const second = parseInt(rangeMatch[2], 10);
+              minCapacity = Math.min(first, second);
+              maxCapacity = Math.max(first, second, maxCapacity);
+            }
+
+            if (isDynamicBoxPricing && Array.isArray(cartItem.items) && cartItem.items.length > 0) {
+              const dynamicSum = cartItem.items.reduce(
+                (sum, it) => sum + Number(it.unitPrice || 0) * Number(it.quantity || 0),
+                0
+              );
+              officialBoxPrice = dynamicSum > 0 ? dynamicSum + boxPackagingFee : Number(cartItem.price);
+            } else {
+              officialBoxPrice = Number(tierData.price) || Number(cartItem.price);
             }
           }
 
-          if (Array.isArray(cartItem.items) && officialCapacity > 0) {
+          if (Array.isArray(cartItem.items) && maxCapacity > 0) {
             const totalPieces = cartItem.items.reduce((sum: number, it) => sum + Number(it.quantity || 0), 0);
-            if (totalPieces !== officialCapacity) {
-              throw new Error(`سعة البوكس غير مكتملة (${totalPieces} من أصل ${officialCapacity} قطع).`);
+            if (totalPieces < minCapacity || totalPieces > maxCapacity) {
+              throw new Error(`سعة البوكس غير مكتملة (${totalPieces} من أصل ${minCapacity}-${maxCapacity} قطع).`);
             }
           }
 
@@ -545,27 +563,57 @@ ${payMethodTitle}
           verifiedItems.push({
             title: cartItem.title,
             portion: cartItem.portion || cartItem.summaryText || "تشكيلة مخصصة",
-            portionNote: cartItem.portionNote || `بوكس مخصص (${officialCapacity} قطع)`,
+            portionNote: cartItem.portionNote || `بوكس مخصص (${maxCapacity} قطع)`,
             quantity: Number(cartItem.quantity || 1),
             price: officialBoxPrice,
             is_custom_box: true,
           });
         } else {
+          // ⚖️ حساب السعر الصحيح للمنتج حسب الوزن المختار (ربع كيلو / نصف كيلو / 1 كيلو) دون إرجاعه إلى 45 ر.س
           const { data: dbProduct } = await supabase
             .from("products")
-            .select("base_price, title_ar")
-            .eq("title_ar", cartItem.title)
+            .select("*")
+            .or(`title_ar.eq.${cartItem.title},title_en.eq.${cartItem.title}`)
             .maybeSingle();
 
-          const officialPrice = dbProduct ? Number(dbProduct.base_price) : Number(cartItem.price);
-          const itemTotal = officialPrice * Number(cartItem.quantity);
+          const cartUnitPrice = Number(cartItem.price) || 0;
+          const portionText = String(cartItem.portionNote || cartItem.portion || "");
+          let officialPrice = cartUnitPrice;
+
+          if (dbProduct) {
+            const dbBase = Number(dbProduct.price_250g || dbProduct.base_price || dbProduct.price || 0);
+            const isHalfKilo = /نصف|500|half/i.test(portionText);
+            const isOneKilo = /(1\s*كجم|1\s*كيلو|كيلو|1000|1\s*kg|kilo)/i.test(portionText) && !/ربع|نصف/i.test(portionText);
+
+            if (isHalfKilo) {
+              if (Number(dbProduct.price_500g) > 0) {
+                officialPrice = Number(dbProduct.price_500g);
+              } else if (cartUnitPrice > dbBase) {
+                officialPrice = cartUnitPrice;
+              } else {
+                officialPrice = dbBase * 2;
+              }
+            } else if (isOneKilo) {
+              if (Number(dbProduct.price_1kg) > 0) {
+                officialPrice = Number(dbProduct.price_1kg);
+              } else if (cartUnitPrice > dbBase) {
+                officialPrice = cartUnitPrice;
+              } else {
+                officialPrice = dbBase * 4;
+              }
+            } else {
+              officialPrice = cartUnitPrice > 0 ? cartUnitPrice : dbBase;
+            }
+          }
+
+          const itemTotal = officialPrice * Number(cartItem.quantity || 1);
 
           verifiedSubtotal += itemTotal;
           verifiedItems.push({
             title: cartItem.title,
             portion: cartItem.portionNote || cartItem.portion || "افتراضي",
             portionNote: cartItem.portionNote || "الحجم القياسي",
-            quantity: cartItem.quantity,
+            quantity: Number(cartItem.quantity || 1),
             price: officialPrice,
           });
         }
@@ -658,7 +706,13 @@ ${payMethodTitle}
 
       setOrderId(generatedId);
 
-      const waUrl = createWhatsAppUrl(generatedId, finalOrderFinancials.finalTotal, verifiedItems);
+      const waUrl = createWhatsAppUrl(
+        generatedId,
+        finalOrderFinancials.subtotal,
+        finalOrderFinancials.discount,
+        finalOrderFinancials.finalTotal,
+        verifiedItems
+      );
       setBackupWhatsAppUrl(waUrl);
 
       const win = window.open(waUrl, "_blank");
@@ -679,7 +733,8 @@ ${payMethodTitle}
           paymentMethod: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         });
       }
-// 📍 فحص وحفظ العنوان تلقائياً في الملف الشخصي إذا لم يكن مسجلاً مسبقاً
+
+      // 📍 فحص وحفظ العنوان تلقائياً في الملف الشخصي إذا لم يكن مسجلاً مسبقاً
       if (deliveryMode === "delivery" && district.trim() && street.trim()) {
         const isAddressAlreadySaved = addresses.some(
           (a) =>
@@ -870,7 +925,8 @@ ${payMethodTitle}
                     />
                   </div>
                 </div>
-{/* 🌟 3. تفاصيل موقع التوصيل محصورة في الرياض */}
+
+                {/* 🌟 3. تفاصيل موقع التوصيل محصورة في الرياض */}
                 {deliveryMode === "delivery" ? (
                   <div className="space-y-3 pt-2 border-t border-stone-100 animate-in fade-in duration-200">
                     
@@ -1067,7 +1123,7 @@ ${payMethodTitle}
                         {isAr ? "هل هذا الطلب إهداء لشخص عزيز؟" : "Is this order a gift?"}
                       </h4>
                       <p className="text-[10px] text-stone-500">
-                        {isAr ? "إضافة شريطة وبطاقة إهداء  مجاناً" : "Free ribbon & gift card"}
+                        {isAr ? "إضافة شريطة وبطاقة إهداء مجاناً" : "Free ribbon & gift card"}
                       </p>
                     </div>
                   </div>
@@ -1336,7 +1392,8 @@ ${payMethodTitle}
                   </div>
                 )}
               </div>
-<div className="bg-white p-5 rounded-2xl border border-stone-200 space-y-4 shadow-2xs">
+
+              <div className="bg-white p-5 rounded-2xl border border-stone-200 space-y-4 shadow-2xs">
                 {/* 🌟 شريط الحالة الرسمية بدلاً من عداد الدقائق */}
                 <div className="flex items-center justify-between text-xs font-bold border-b border-stone-100 pb-3">
                   <div className="flex items-center gap-2">
@@ -1352,7 +1409,7 @@ ${payMethodTitle}
                   </span>
                 </div>
 
-                {/* 🌟 المحطات الثلاث المتناسقة فقط (تم دمج التغليف مع التحضير وحذف الخطوة الزائدة) */}
+                {/* 🌟 المحطات الثلاث المتناسقة فقط */}
                 <div className="space-y-4 pt-1">
                   
                   {/* المحطة 1: تم استلام الطلب وتوثيقه (مكتملة ومؤكدة) */}
@@ -1379,7 +1436,7 @@ ${payMethodTitle}
                         <h5 className="text-xs font-black text-[#4A0E17]"> التحضير الطازج</h5>
                         <span className="text-[10px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">جاري التجهيز</span>
                       </div>
-                      <p className="text-[10px] text-stone-500 mt-0.5">إعداد البقلاوة بالسمن والفسق وتجهيز كرت الإهداء والتغليف.</p>
+                      <p className="text-[10px] text-stone-500 mt-0.5">إعداد البقلاوة بالسمن والفستق وتجهيز كرت الإهداء والتغليف.</p>
                     </div>
                   </div>
 
