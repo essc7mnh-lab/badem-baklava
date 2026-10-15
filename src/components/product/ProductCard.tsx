@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Image from "next/image";
 import { Plus, Heart, Clock } from "lucide-react";
 import { Product } from "@/types";
@@ -10,15 +10,32 @@ import { useWishlist } from "@/context/WishlistContext";
 import { useToast } from "@/context/ToastContext";
 import { royalSound } from "@/lib/sound";
 
+interface WeightPricesData {
+  quarter?: number | string;
+  half?: number | string;
+  kilo?: number | string;
+}
+
 interface ExtendedProduct extends Product {
   is_available?: boolean;
   isOutOfStock?: boolean;
   is_out_of_stock?: boolean;
+  base_price?: number | string;
+  price?: number | string;
+  original_price?: number | string;
+  compare_at_price?: number | string;
+  weight_prices?: WeightPricesData | string | null;
+  weightPrices?: WeightPricesData | string | null;
+  has_weights?: boolean;
+  hasWeights?: boolean;
+  title_ar?: string;
+  title_en?: string;
+  image_url?: string;
 }
 
 interface ProductCardProps {
   product: ExtendedProduct;
-  onOpenDetail: (product: Product) => void;
+  onOpenDetail: (product: ExtendedProduct) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail }) => {
@@ -29,9 +46,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
 
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  const title = language === "ar" ? product.titleAr : product.titleEn;
-  const currencySymbol = language === "ar" ? "ر.س " : "SAR ";
+  const isAr = language === "ar";
+  const title = isAr
+    ? product.titleAr || product.title_ar || "صنف فاخر"
+    : product.titleEn || product.title_en || "Signature Item";
+  const currencySymbol = isAr ? "ر.س " : "SAR ";
   const favorited = isFavorite(product.id);
+  const productImage = product.image || product.image_url || "/hero-baklava.png";
+
+  // التحقق مما إذا كان الصنف يعتمد نظام الأوزان
+  const hasWeights = product.has_weights !== false && product.hasWeights !== false;
 
   // التحقق من حالة نفاذ الكمية
   const isSoldOut = Boolean(
@@ -40,10 +64,42 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
     product.is_out_of_stock === true
   );
 
+  // استخراج أسعار الأوزان إن وجدت لضمان تطابق سعر الكرت مع النافذة
+  const parsedWeights = useMemo<WeightPricesData | null>(() => {
+    const raw = product.weight_prices ?? product.weightPrices;
+    if (!raw) return null;
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw) as WeightPricesData;
+      } catch {
+        return null;
+      }
+    }
+    return raw as WeightPricesData;
+  }, [product.weight_prices, product.weightPrices]);
+
+  // السعر الفعلي المعروض (يأخذ سعر الربع كيلو من weight_prices إن وُجد، وإلا يأخذ basePrice)
+  const effectiveBasePrice = useMemo<number>(() => {
+    const qPrice = Number(parsedWeights?.quarter);
+    if (hasWeights && Number.isFinite(qPrice) && qPrice > 0) {
+      return qPrice;
+    }
+    const base = Number(product.basePrice ?? product.base_price ?? product.price ?? 0);
+    return Number.isFinite(base) && base > 0 ? base : 45;
+  }, [parsedWeights, hasWeights, product.basePrice, product.base_price, product.price]);
+
+  // السعر الأصلي (المشطوب) قبل الخصم
+  const effectiveOriginalPrice = useMemo<number>(() => {
+    const orig = Number(
+      product.originalPrice ?? product.original_price ?? product.compare_at_price ?? 0
+    );
+    return Number.isFinite(orig) && orig > 0 ? orig : 0;
+  }, [product.originalPrice, product.original_price, product.compare_at_price]);
+
   // حساب نسبة الخصم الحقيقية إذا وجدت
   const discountPercent =
-    product.hasDiscount && product.originalPrice && product.originalPrice > product.basePrice
-      ? Math.round(((product.originalPrice - product.basePrice) / product.originalPrice) * 100)
+    effectiveOriginalPrice > effectiveBasePrice && effectiveBasePrice > 0
+      ? Math.round(((effectiveOriginalPrice - effectiveBasePrice) / effectiveOriginalPrice) * 100)
       : null;
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
@@ -51,12 +107,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
     const added = toggleFavorite(product.id);
     if (added) {
       showToast(
-        language === "ar" ? `تمت إضافة "${title}" إلى المفضلة ❤️` : `Added "${title}" to wishlist ❤️`,
+        isAr ? `تمت إضافة "${title}" إلى المفضلة ❤️` : `Added "${title}" to wishlist ❤️`,
         "favorite"
       );
     } else {
       showToast(
-        language === "ar" ? `تمت الإزالة من المفضلة` : `Removed from wishlist`,
+        isAr ? `تمت الإزالة من المفضلة` : `Removed from wishlist`,
         "info"
       );
     }
@@ -73,14 +129,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
       {
         id: product.id,
         title,
-        price: product.basePrice,
-        image: product.image,
-        portionNote: language === "ar" ? "ربع كيلو (250g)" : "250g",
+        price: effectiveBasePrice,
+        image: productImage,
+        portionNote: hasWeights ? (isAr ? "ربع كيلو (250g)" : "250g Quarter") : "",
       },
       e
     );
     showToast(
-      language === "ar" ? `تمت إضافة "${title}" إلى السلة 🛍️` : `Added "${title}" to cart 🛍️`,
+      isAr ? `تمت إضافة "${title}" إلى السلة 🛍️` : `Added "${title}" to cart 🛍️`,
       "success"
     );
   };
@@ -124,15 +180,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           <div className="absolute inset-0 bg-black/30 backdrop-blur-[1.5px] z-10 flex items-center justify-center p-2">
             <span className="bg-[#4A0E17]/95 text-amber-200 border border-[#C59B27]/40 text-[10px] font-black px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
               <Clock className="w-3 h-3 text-[#E5C058] animate-pulse" />
-              <span>{language === "ar" ? "نفذت الكمية" : "Sold Out"}</span>
+              <span>{isAr ? "نفذت الكمية" : "Sold Out"}</span>
             </span>
           </div>
         )}
 
         {/* صورة المنتج */}
         <Image
-          src={product.image || "/hero-baklava.png"}
-          alt={title || "صنف فاخر"}
+          src={productImage}
+          alt={title}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 300px"
           quality={80}
@@ -155,12 +211,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-baseline gap-1.5">
           <span className="text-xs sm:text-sm font-black text-[#4A0E17]">
-            {product.basePrice.toFixed(2)} <span className="text-[10px] font-bold">{currencySymbol}</span>
+            {effectiveBasePrice.toFixed(2)} <span className="text-[10px] font-bold">{currencySymbol}</span>
           </span>
           
-          {product.originalPrice && product.originalPrice > product.basePrice && (
+          {effectiveOriginalPrice > effectiveBasePrice && (
             <span className="text-[10px] text-stone-400 line-through font-medium">
-              {product.originalPrice.toFixed(2)}
+              {effectiveOriginalPrice.toFixed(2)}
             </span>
           )}
         </div>
@@ -171,7 +227,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
             type="button"
             disabled
             className="w-7 h-7 rounded-full bg-stone-200/90 text-stone-400 flex items-center justify-center border border-stone-300/80 cursor-not-allowed"
-            title={language === "ar" ? "نفذت الكمية مؤقتاً" : "Out of stock"}
+            title={isAr ? "نفذت الكمية مؤقتاً" : "Out of stock"}
           >
             <Clock className="w-3.5 h-3.5" />
           </button>
