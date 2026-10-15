@@ -51,8 +51,8 @@ export type ExtendedProduct = Omit<
   original_price?: number | string;
   originalPrice?: number | string;
   compare_at_price?: number | string;
-  weight_prices?: WeightPrices | null;
-  weightPrices?: WeightPrices | null;
+  weight_prices?: WeightPrices | string | null;
+  weightPrices?: WeightPrices | string | null;
   title_ar?: string;
   title_en?: string;
   description_ar?: string | null;
@@ -85,6 +85,37 @@ interface IngredientObject {
 
 type PortionType = "quarter" | "half" | "kilo";
 
+// ⚡ ذاكرة تخزين مؤقتة لمنع أي تأخير عند إعادة فتح نفس المنتج
+const productPricingCache = new Map<
+  string,
+  {
+    weightPrices: WeightPrices | null;
+    basePrice: number | null;
+    originalPrice: number | null;
+  }
+>();
+
+const parseWeightPricesObject = (raw: unknown): WeightPrices | null => {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? (parsed as WeightPrices) : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === "object") {
+    return raw as WeightPrices;
+  }
+  return null;
+};
+
+const toPositiveNumber = (val: unknown): number | null => {
+  const num = Number(val);
+  return Number.isFinite(num) && num > 0 ? num : null;
+};
+
 export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClose }) => {
   const { language, t } = useLanguage();
   const isAr = language === "ar";
@@ -110,42 +141,28 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
 
+  const productIdKey = product?.id ? String(product.id) : "";
+
   const initialWeights = useMemo<WeightPrices | null>(() => {
-    const raw = product?.weight_prices ?? product?.weightPrices;
-    if (!raw) return null;
-    if (typeof raw === "string") {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
+    if (productIdKey && productPricingCache.has(productIdKey)) {
+      const cached = productPricingCache.get(productIdKey)?.weightPrices;
+      if (cached) return cached;
     }
-    return raw as WeightPrices;
-  }, [product]);
+    return parseWeightPricesObject(product?.weight_prices ?? product?.weightPrices);
+  }, [product, productIdKey]);
 
-  const [liveWeightPrices, setLiveWeightPrices] = useState<WeightPrices | null>(initialWeights);
-  const [liveOriginalPrice, setLiveOriginalPrice] = useState<number>(
-    Number(product?.original_price ?? product?.originalPrice ?? product?.compare_at_price ?? 0)
-  );
+  const [fetchedWeights, setFetchedWeights] = useState<{
+    productId: string;
+    weightPrices: WeightPrices | null;
+    basePrice: number | null;
+    originalPrice: number | null;
+  } | null>(null);
 
-  // جلب الأسعار المحدثة من Supabase
+  // جلب الأسعار المحدثة من Supabase وتخزينها فورياً
   useEffect(() => {
+    if (!product?.id) return;
     let isMounted = true;
-    const timer = setTimeout(() => {
-      if (isMounted) {
-        setLiveWeightPrices(initialWeights);
-        setLiveOriginalPrice(
-          Number(product?.original_price ?? product?.originalPrice ?? product?.compare_at_price ?? 0)
-        );
-      }
-    }, 0);
-
-    if (!product?.id) {
-      return () => {
-        isMounted = false;
-        clearTimeout(timer);
-      };
-    }
+    const pid = String(product.id);
 
     const fetchFreshPrices = async () => {
       try {
@@ -156,15 +173,25 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
           .maybeSingle();
 
         if (isMounted && data && !error) {
-          if (data.weight_prices) {
-            const parsed = typeof data.weight_prices === "string"
-              ? JSON.parse(data.weight_prices)
-              : data.weight_prices;
-            setLiveWeightPrices(parsed);
-          }
-          if (data.original_price !== undefined && data.original_price !== null) {
-            setLiveOriginalPrice(Number(data.original_price));
-          }
+          const parsedWeights = parseWeightPricesObject(data.weight_prices);
+          const freshBase = toPositiveNumber(data.base_price);
+          const freshOriginal =
+            data.original_price !== undefined && data.original_price !== null
+              ? Number(data.original_price)
+              : null;
+
+          productPricingCache.set(pid, {
+            weightPrices: parsedWeights,
+            basePrice: freshBase,
+            originalPrice: freshOriginal,
+          });
+
+          setFetchedWeights({
+            productId: pid,
+            weightPrices: parsedWeights,
+            basePrice: freshBase,
+            originalPrice: freshOriginal,
+          });
         }
       } catch (err) {
         console.error("Failed to fetch fresh weight prices:", err);
@@ -175,9 +202,30 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
     };
-  }, [product?.id, initialWeights, product?.original_price, product?.originalPrice, product?.compare_at_price]);
+  }, [product?.id]);
+
+  const activeWeightPrices = useMemo<WeightPrices | null>(() => {
+    if (fetchedWeights && fetchedWeights.productId === productIdKey && fetchedWeights.weightPrices) {
+      return fetchedWeights.weightPrices;
+    }
+    return initialWeights;
+  }, [fetchedWeights, productIdKey, initialWeights]);
+
+  const liveOriginalPrice = useMemo<number>(() => {
+    if (
+      fetchedWeights &&
+      fetchedWeights.productId === productIdKey &&
+      fetchedWeights.originalPrice !== null
+    ) {
+      return fetchedWeights.originalPrice;
+    }
+    if (productIdKey && productPricingCache.has(productIdKey)) {
+      const cachedOrig = productPricingCache.get(productIdKey)?.originalPrice;
+      if (cachedOrig !== null && cachedOrig !== undefined) return cachedOrig;
+    }
+    return Number(product?.original_price ?? product?.originalPrice ?? product?.compare_at_price ?? 0);
+  }, [fetchedWeights, productIdKey, product]);
 
   const imagesList = useMemo<string[]>(() => {
     if (!product) return ["/hero-baklava.png"];
@@ -198,11 +246,29 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     product?.is_out_of_stock === true
   );
 
-  // الأسعار الحالية
-  const singleBasePrice = Number(product?.base_price ?? product?.price ?? product?.basePrice ?? 0);
-  const quarterPrice = Number(liveWeightPrices?.quarter ?? singleBasePrice);
-  const halfPrice = Number(liveWeightPrices?.half ?? (liveWeightPrices?.quarter ?? singleBasePrice));
-  const kiloPrice = Number(liveWeightPrices?.kilo ?? (liveWeightPrices?.quarter ?? singleBasePrice));
+  // ⚖️ حساب الأسعار بدقة ومنع تساوي النصف كيلو والكيلو مع الربع كيلو (45 ر.س) أثناء التحميل
+  const singleBasePrice = useMemo<number>(() => {
+    if (fetchedWeights && fetchedWeights.productId === productIdKey && fetchedWeights.basePrice) {
+      return fetchedWeights.basePrice;
+    }
+    if (productIdKey && productPricingCache.has(productIdKey)) {
+      const cachedBase = productPricingCache.get(productIdKey)?.basePrice;
+      if (cachedBase) return cachedBase;
+    }
+    return toPositiveNumber(product?.base_price ?? product?.price ?? product?.basePrice) ?? 45;
+  }, [fetchedWeights, productIdKey, product]);
+
+  const quarterPrice = useMemo<number>(() => {
+    return toPositiveNumber(activeWeightPrices?.quarter) ?? singleBasePrice;
+  }, [activeWeightPrices, singleBasePrice]);
+
+  const halfPrice = useMemo<number>(() => {
+    return toPositiveNumber(activeWeightPrices?.half) ?? quarterPrice * 2;
+  }, [activeWeightPrices, quarterPrice]);
+
+  const kiloPrice = useMemo<number>(() => {
+    return toPositiveNumber(activeWeightPrices?.kilo) ?? quarterPrice * 4;
+  }, [activeWeightPrices, quarterPrice]);
 
   const currentPrice = useMemo(() => {
     if (!hasWeights) return singleBasePrice;
@@ -606,7 +672,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 >
                   <span className="block text-xs font-black">{t("portionQuarter")}</span>
                   
-                  {/* إظهار السعر المشطوب إن وجد خصم */}
                   {hasDiscount && (
                     <span className="text-[10px] line-through text-stone-400 font-mono block mt-1">
                       {quarterOriginalPrice} ر.س
@@ -631,7 +696,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 >
                   <span className="block text-xs font-black">{t("portionHalf")}</span>
 
-                  {/* إظهار السعر المشطوب إن وجد خصم */}
                   {hasDiscount && (
                     <span className="text-[10px] line-through text-stone-400 font-mono block mt-1">
                       {halfOriginalPrice} ر.س
@@ -656,7 +720,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 >
                   <span className="block text-xs font-black">{t("portionKilo")}</span>
 
-                  {/* إظهار السعر المشطوب إن وجد خصم */}
                   {hasDiscount && (
                     <span className="text-[10px] line-through text-stone-400 font-mono block mt-1">
                       {kiloOriginalPrice} ر.س
@@ -842,7 +905,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
               {t("total")}
             </span>
 
-            {/* إظهار السعر المشطوب للوزن المختار مع نسبة الخصم */}
             {hasDiscount && currentOriginalPrice && (
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-xs line-through text-stone-300/80 font-mono font-bold">
