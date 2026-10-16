@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import { Plus, Trash2, Edit3, Upload, Loader2, Check, Wand2 } from "lucide-react";
+import { Plus, Trash2, Edit3, Upload, Loader2, Check, Wand2, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 import { translateToGourmetEnglish, generateCleanSlug } from "@/lib/gourmetTranslator";
 
@@ -30,10 +30,11 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
     name_ar: "",
     name_en: "",
     image_url: "",
-    sort_order: 0,
+    sort_order: 1,
   });
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const handleCategoryNameArChange = (value: string) => {
     const translated = translateToGourmetEnglish(value);
@@ -100,7 +101,7 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
       }
 
       setEditingCatId(null);
-      setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: 0 });
+      setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: categories.length + 1 });
       await fetchData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "خطأ أثناء الحفظ";
@@ -123,6 +124,38 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
     }
   };
 
+  // تبديل ترتيب قسمين بضغطة زر
+  const handleSwapOrder = async (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= categories.length) return;
+
+    const currentCat = categories[index];
+    const targetCat = categories[targetIndex];
+
+    setMovingId(currentCat.id);
+    try {
+      const currentOrder = currentCat.sort_order ?? index + 1;
+      const targetOrder = targetCat.sort_order ?? targetIndex + 1;
+
+      // إذا كانت الأرقام متطابقة، نضمن وجود فرق رقمي
+      const newCurrentOrder = currentOrder === targetOrder 
+        ? (direction === "up" ? targetOrder - 1 : targetOrder + 1)
+        : targetOrder;
+      const newTargetOrder = currentOrder;
+
+      await Promise.all([
+        supabase.from("categories").update({ sort_order: newCurrentOrder }).eq("id", currentCat.id),
+        supabase.from("categories").update({ sort_order: newTargetOrder }).eq("id", targetCat.id),
+      ]);
+
+      await fetchData();
+    } catch (err) {
+      console.error("فشل تعديل الترتيب:", err);
+    } finally {
+      setMovingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* استمارة إضافة / تعديل قسم */}
@@ -137,7 +170,7 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
               type="button"
               onClick={() => {
                 setEditingCatId(null);
-                setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: 0 });
+                setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: categories.length + 1 });
               }}
               className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
             >
@@ -146,7 +179,7 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
           <div>
             <label className="block font-bold mb-1">اسم القسم بالعربي *:</label>
             <input
@@ -161,7 +194,7 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
 
           <div>
             <label className="flex items-center justify-between font-bold mb-1">
-              <span>الاسم بالإنجليزي (ترجمة فورية):</span>
+              <span>الاسم بالإنجليزي:</span>
               <Wand2 className="w-3 h-3 text-[#C59B27]" />
             </label>
             <input
@@ -174,7 +207,7 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
           </div>
 
           <div>
-            <label className="block font-bold mb-1">معرّف الرابط (Slug تلقائي):</label>
+            <label className="block font-bold mb-1">معرّف الرابط (Slug):</label>
             <input
               type="text"
               placeholder="antep-signature-baklava"
@@ -184,7 +217,21 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
             />
           </div>
 
-          <div className="md:col-span-3 space-y-1">
+          {/* 🌟 حقل ترتيب العرض */}
+          <div>
+            <label className="block font-bold mb-1 text-[#4A0E17]">
+              ترتيب الظهور (1 = الأول):
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={newCat.sort_order}
+              onChange={(e) => setNewCat({ ...newCat, sort_order: Number(e.target.value) })}
+              className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-bold text-center"
+            />
+          </div>
+
+          <div className="md:col-span-4 space-y-1">
             <label className="block font-bold mb-1">صورة القسم مفرغة PNG *:</label>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 px-4 py-2.5 bg-[#4A0E17] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-[#36070E] transition shrink-0">
@@ -232,17 +279,45 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
         </button>
       </form>
 
-      {/* قائمة شبكة الأقسام */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {categories.map((cat) => (
-          <div key={cat.id} className="bg-white p-4 rounded-3xl border border-stone-200 flex items-center justify-between gap-3 shadow-2xs">
+      {/* قائمة شبكة الأقسام مع أزرار التقديم والتأخير */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {categories.map((cat, index) => (
+          <div key={cat.id} className="bg-white p-4 rounded-3xl border border-stone-200 flex items-center justify-between gap-3 shadow-2xs relative">
+            
+            {/* أزرار التقديم والتأخير السريعة */}
+            <div className="flex flex-col gap-1 items-center justify-center">
+              <button
+                type="button"
+                disabled={index === 0 || movingId === cat.id}
+                onClick={() => handleSwapOrder(index, "up")}
+                title="تقديم للبداية"
+                className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-[#4A0E17] hover:text-white disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center transition cursor-pointer text-stone-600"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[10px] font-mono font-bold text-[#4A0E17]">
+                #{cat.sort_order ?? index + 1}
+              </span>
+              <button
+                type="button"
+                disabled={index === categories.length - 1 || movingId === cat.id}
+                onClick={() => handleSwapOrder(index, "down")}
+                title="تأخير للنهاية"
+                className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-[#4A0E17] hover:text-white disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center transition cursor-pointer text-stone-600"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
             <div className="relative w-12 h-12 rounded-2xl overflow-hidden bg-stone-50 border border-stone-100 shrink-0">
               <Image src={cat.image_url} alt={cat.name_ar} fill sizes="48px" className="object-contain" />
             </div>
+
             <div className="flex-1 min-w-0">
               <h4 className="font-bold text-xs truncate">{cat.name_ar}</h4>
               <span className="text-[10px] text-stone-400 block truncate">{cat.name_en}</span>
             </div>
+
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -253,7 +328,7 @@ export const CategoriesManager: React.FC<CategoriesManagerProps> = ({
                     name_ar: cat.name_ar,
                     name_en: cat.name_en,
                     image_url: cat.image_url,
-                    sort_order: cat.sort_order || 0,
+                    sort_order: cat.sort_order ?? index + 1,
                   });
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
