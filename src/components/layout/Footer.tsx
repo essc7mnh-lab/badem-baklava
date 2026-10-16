@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image"; // 🌟 تم إضافة استيراد Image
 import { Phone, MapPin, Clock, Sparkles, ArrowUpRight } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -51,59 +52,116 @@ export const Footer: React.FC = () => {
       {/* توهج ذهبي ناعم في الخلفية العلوية */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-20 bg-[#C59B27]/10 blur-3xl pointer-events-none" />
 
-      <div className="max-w-6xl mx-auto flex flex-col items-center gap-7 relative z-10">
+      <div className="max-w-6xl mx-auto flex flex-col items-center gap-6 relative z-10">
         
-        {/* 1. شعار واسم متجر بادَم الفاخر */}
-        <div className="flex flex-col items-center text-center space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#C59B27]/15 border border-[#C59B27]/30 text-[#E5C058] text-[9.5px] font-black tracking-widest uppercase mb-1 shadow-2xs">
-            <Sparkles className="w-3 h-3 text-[#E5C058]" />
-            <span>{isAr ? "أصالة الضيافة " : "ROYAL TURKISH HOSPITALITY"}</span>
+        {/* 1. الشعار الملكي في القمة بدون مشتتات بصرية */}
+        <div className="flex flex-col items-center text-center">
+          
+          {/* 🌟 شعار بادَم (SVG) يتصدر المشهد كالتاج */}
+          <div className="relative w-14 h-20 sm:w-16 sm:h-24 mb-2.5 flex items-center justify-center drop-shadow-[0_6px_16px_rgba(229,192,88,0.28)]">
+            <svg
+              viewBox="0 0 100 150"
+              className="w-full h-full overflow-visible"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id="royalGold" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#F3DC8B" />
+                  <stop offset="35%" stopColor="#C59B27" />
+                  <stop offset="50%" stopColor="#FFF2B2" />
+                  <stop offset="70%" stopColor="#B38728" />
+                  <stop offset="100%" stopColor="#E5C058" />
+                </linearGradient>
+              </defs>
+
+              <rect
+                x="15"
+                y="8"
+                width="70"
+                height="134"
+                rx="35"
+                stroke="url(#royalGold)"
+                strokeWidth="4.5"
+              />
+
+              <g stroke="url(#royalGold)" strokeLinecap="round" strokeLinejoin="round">
+                <path
+                  d="M44 98 C39 75, 43 48, 52 36 C63 46, 68 63, 58 75 C54 79, 48 80, 44 80"
+                  strokeWidth="3.8"
+                />
+                <path d="M51 42 C51 55, 49 68, 46 78" strokeWidth="2.8" />
+                <path d="M45 55 L49 49" strokeWidth="2.2" />
+                <path d="M56 58 L52 52" strokeWidth="2.2" />
+                <path
+                  d="M48 79 C67 79, 70 106, 51 108 C43 109, 36 105, 33 101"
+                  strokeWidth="4"
+                />
+                <path d="M44 88 C44 96, 45 103, 47 108" strokeWidth="3.5" />
+              </g>
+            </svg>
           </div>
-          <h3 className="font-black text-[#FAF5ED] font-brand text-xl sm:text-2xl tracking-[0.2em] uppercase drop-shadow-sm">
-            BADEM BAKLAVA
+
+          {/* اسم البراند */}
+          <h3 className="font-serif font-bold text-2xl sm:text-3xl tracking-[0.25em] bg-gradient-to-r from-[#DFB755] via-[#FFF0A5] to-[#C59B27] bg-clip-text text-transparent drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)] pl-1">
+            BADEM
           </h3>
-          <p className="text-[11px] text-stone-300 font-medium tracking-wide">
+
+          {/* كلمة BAKLAVA */}
+          <span className="font-serif text-[10px] sm:text-[11px] tracking-[0.5em] text-[#E5C058]/90 font-semibold mt-0.5 pl-1.5">
+            BAKLAVA
+          </span>
+
+          {/* فاصل "أصالة الضيافة" بتصميم خطوط جانبية ملكية بدلاً من الكبسولة العلوية */}
+          <div className="flex items-center justify-center gap-3 mt-4 mb-1.5">
+            <span className="w-8 sm:w-12 h-[1px] bg-gradient-to-r from-transparent to-[#C59B27]/60" />
+            <div className="flex items-center gap-1.5 text-[#E5C058] text-[10px] font-bold tracking-widest uppercase">
+              <Sparkles className="w-3 h-3 text-[#C59B27]" />
+              <span>{isAr ? "أصالة الضيافة التركية" : "ROYAL TURKISH HOSPITALITY"}</span>
+              <Sparkles className="w-3 h-3 text-[#C59B27]" />
+            </div>
+            <span className="w-8 sm:w-12 h-[1px] bg-gradient-to-l from-transparent to-[#C59B27]/60" />
+          </div>
+
+          <p className="text-xs text-stone-300/95 font-medium tracking-wide max-w-md leading-relaxed">
             {isAr ? "بقلاوة تركية فاخرة بالفستق العنتابي والسمن البلدي النقي" : "Artisan Turkish Baklava & Royal Confectionery"}
           </p>
         </div>
 
-        {/* 2. بطاقة معلومات الفرع وقنوات التواصل */}
-        <div className="w-full max-w-2xl bg-white/[0.03] border border-white/10 rounded-2xl p-4 backdrop-blur-md flex flex-col items-center gap-3.5 text-[11px] shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]">
+        {/* 2. بطاقة معلومات الفرع مع انعكاس ذهبي علوي فخم */}
+        <div className="w-full max-w-2xl bg-gradient-to-b from-white/[0.05] to-white/[0.015] border border-white/10 border-t-[#C59B27]/40 rounded-3xl p-4 sm:p-5 backdrop-blur-md flex flex-col items-center gap-4 text-[11px] shadow-[0_10px_30px_rgba(0,0,0,0.25),inset_0_1px_1px_rgba(229,192,88,0.15)]">
           
           {/* الموقع وأوقات الدوام */}
-          <div className="flex flex-wrap items-center justify-center gap-2.5 text-stone-300">
+          <div className="flex flex-wrap items-center justify-center gap-3 text-stone-200">
             <a
               href={mapLink}
               target="_blank"
               rel="noopener noreferrer"
-              title={isAr ? "عرض الموقع على خريطة جوجل" : "View location on Google Maps"}
               className="flex items-center gap-1.5 hover:text-[#E5C058] transition group cursor-pointer"
             >
               <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0 group-hover:scale-110 transition-transform" />
-              <span className="underline decoration-stone-500/50 underline-offset-4 group-hover:decoration-[#E5C058]">
+              <span className="underline decoration-[#C59B27]/40 underline-offset-4 group-hover:decoration-[#E5C058]">
                 {isAr ? "الرياض - حي المحمدية - شارع التخصصي" : "Riyadh - Al Mohammadiyah - Takhassusi St."}
               </span>
             </a>
 
-            <span className="text-white/20 hidden sm:inline">•</span>
+            <span className="text-[#C59B27]/40 hidden sm:inline">✦</span>
 
-            <span className="flex items-center gap-1.5 text-stone-300">
+            <span className="flex items-center gap-1.5 text-stone-200">
               <Clock className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
               <span>{isAr ? "يومياً: 4 م - 12 ص" : "Daily: 4 PM - 12 AM"}</span>
             </span>
           </div>
 
           {/* أزرار التواصل الموحدة */}
-          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2 border-t border-white/5 w-full">
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-3 border-t border-white/10 w-full">
             <a
               href="https://wa.me/966592320106"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#C59B27]/40 text-stone-200 hover:text-[#E5C058] transition text-[11px] font-bold group"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-[#C59B27]/15 border border-white/10 hover:border-[#E5C058]/50 text-stone-200 hover:text-[#E5C058] transition-all duration-300 text-[11px] font-bold group shadow-2xs"
             >
-              <div className="text-[#E5C058] group-hover:scale-110 transition-transform">
-                <WhatsAppIcon className="w-3.5 h-3.5" />
-              </div>
+              <WhatsAppIcon className="w-3.5 h-3.5 text-[#E5C058] group-hover:scale-110 transition-transform" />
               <span>{isAr ? "واتساب الطلبات" : "WhatsApp"}</span>
             </a>
 
@@ -111,29 +169,26 @@ export const Footer: React.FC = () => {
               href="https://instagram.com/badem_sa"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#C59B27]/40 text-stone-200 hover:text-[#E5C058] transition text-[11px] font-bold group"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-[#C59B27]/15 border border-white/10 hover:border-[#E5C058]/50 text-stone-200 hover:text-[#E5C058] transition-all duration-300 text-[11px] font-bold group shadow-2xs"
             >
-              <div className="text-[#E5C058] group-hover:scale-110 transition-transform">
-                <InstagramIcon className="w-3.5 h-3.5" />
-              </div>
+              <InstagramIcon className="w-3.5 h-3.5 text-[#E5C058] group-hover:scale-110 transition-transform" />
               <span className="font-mono">@badem_sa</span>
             </a>
 
             <a
               href="tel:+966592320106"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#C59B27]/40 text-stone-200 hover:text-[#E5C058] transition text-[11px] font-bold group"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-[#C59B27]/15 border border-white/10 hover:border-[#E5C058]/50 text-stone-200 hover:text-[#E5C058] transition-all duration-300 text-[11px] font-bold group shadow-2xs"
             >
               <Phone className="w-3.5 h-3.5 text-[#E5C058] group-hover:scale-110 transition-transform" />
               <span>{isAr ? "اتصل بنا" : "Call"}</span>
             </a>
           </div>
-
         </div>
 
         {/* فاصل ذهبي ناعم */}
         <div className="w-full max-w-4xl h-[1px] bg-gradient-to-r from-transparent via-[#C59B27]/30 to-transparent my-0.5" />
 
-        {/* 3. شريط الحقوق + بصمة NT Media المختصرة والمندمجة بالكامل */}
+        {/* 3. شريط الحقوق + بصمة التطوير */}
         <div className="w-full max-w-4xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
           
           {/* حقوق النشر لمتجر بادَم */}
@@ -148,12 +203,12 @@ export const Footer: React.FC = () => {
             </p>
           </div>
 
-          {/* 🌟 كبسولة التطوير الملكية المختصرة (Minimalist Royal Badge) */}
+          {/* 🌟 كبسولة التطوير الملكية المختصرة */}
           <a
             href={AGENCY_URL}
             target="_blank"
             rel="noopener noreferrer"
-            title="NT Media Agency"
+            title="HM Digital Solutions"
             className="group relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-[#E5C058]/45 backdrop-blur-xl shadow-xs hover:shadow-[0_0_15px_rgba(229,192,88,0.18)] active:scale-95 transition-all duration-300 cursor-pointer overflow-hidden"
           >
             {/* انعكاس ذهبي انسيابي خفيف عند التمرير */}
@@ -175,7 +230,7 @@ export const Footer: React.FC = () => {
             {/* الاسم مختصر ومندمج مع درجات عاج وأوف وايت المتجر */}
             <div dir="ltr" className="flex items-center gap-1 text-[11px] font-bold">
               <span className="text-[#FAF5ED] group-hover:text-[#E5C058] transition-colors font-mono tracking-tight">
-                NT Media
+                MY BRAND
               </span>
               <ArrowUpRight className="w-3 h-3 text-[#C59B27] group-hover:text-[#E5C058] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-300" />
             </div>

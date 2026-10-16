@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Crown } from "lucide-react";
+
 import { useLanguage } from "@/context/LanguageContext";
 
 export const BrandStoryMarquee: React.FC = () => {
@@ -114,7 +114,7 @@ export const BrandStoryMarquee: React.FC = () => {
 
         {/* مسار النصوص الدائري اللانهائي */}
         <div className="royal-container flex overflow-hidden w-full" dir="ltr">
-          {/* المسار الأول */}
+         {/* المسار الأول */}
           <div
             className={`${isAr ? "royal-track-ar" : "royal-track-en"} ${
               isPaused ? "royal-track-paused" : ""
@@ -126,7 +126,10 @@ export const BrandStoryMarquee: React.FC = () => {
                 className="flex items-center gap-2.5 text-xs md:text-sm font-bold tracking-wide px-5 text-stone-200"
                 dir={isAr ? "rtl" : "ltr"}
               >
-                <Crown className="w-3.5 h-3.5 text-[#E5C058] shrink-0 animate-pulse" />
+                {/* الشعار المصغر المخصص للبراند */}
+                <span className="flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full border border-[#E5C058]/80 bg-gradient-to-b from-[#E5C058]/20 to-transparent text-[#E5C058] font-serif font-bold text-[10px] md:text-[12px] shrink-0 shadow-[0_0_4px_rgba(229,192,88,0.4)]">
+                  B
+                </span>
                 <span className="drop-shadow-xs">{text}</span>
                 <span className="text-[#C59B27]/60 mx-2 text-[10px]">✦</span>
               </div>
@@ -146,7 +149,10 @@ export const BrandStoryMarquee: React.FC = () => {
                 className="flex items-center gap-2.5 text-xs md:text-sm font-bold tracking-wide px-5 text-stone-200"
                 dir={isAr ? "rtl" : "ltr"}
               >
-                <Crown className="w-3.5 h-3.5 text-[#E5C058] shrink-0 animate-pulse" />
+                {/* الشعار المصغر المخصص للبراند */}
+                <span className="flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full border border-[#E5C058]/80 bg-gradient-to-b from-[#E5C058]/20 to-transparent text-[#E5C058] font-serif font-bold text-[10px] md:text-[12px] shrink-0 shadow-[0_0_4px_rgba(229,192,88,0.4)]">
+                  B
+                </span>
                 <span className="drop-shadow-xs">{text}</span>
                 <span className="text-[#C59B27]/60 mx-2 text-[10px]">✦</span>
               </div>

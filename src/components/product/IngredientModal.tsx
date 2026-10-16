@@ -732,6 +732,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                   <span className="text-[9.5px] text-[#C59B27] font-black block mt-0.5">بوكس إهداء فاخر</span>
                 </button>
               </div>
+              
             </div>
           )}
           {/* ------------------------------------------------------------- */}
@@ -885,14 +886,46 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </form>
           </div>
 
-          <div className="flex items-start gap-2.5 p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-[11px] text-amber-900">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">
-              {isAr
-                ? "تنبيه مسببات الحساسية: اخبرنا اذا كان يوجد لديك اي حساسية من شيء معين."
-                : "Allergen Warning: Contains tree nuts, wheat, dairy, and natural ghee."}
-            </span>
-          </div>
+        
+
+          {/* 👇👇 قم بلصق الكود الجديد هنا 👇👇 */}
+          {hasWeights && (
+            <div className="space-y-3 mt-2">
+              {/* قسم مسببات الحساسية بتصميم كبسولة أنيقة */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-[#FAF5ED] border border-amber-200/70 rounded-2xl shadow-sm">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-amber-100/80 flex items-center justify-center shrink-0 border border-amber-200/50">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <h4 className="text-xs font-black text-[#4A0E17]">
+                    {isAr ? "مسببات الحساسية :" : "Allergens:"}
+                  </h4>
+                </div>
+                <p className="text-[11px] font-bold text-amber-900 bg-amber-100/50 px-3 py-1.5 rounded-xl border border-amber-200/30 w-full sm:w-auto text-center">
+                  {isAr ? "بيض ، حليب ، جلوتين." : "Eggs, Milk, Gluten."}
+                </p>
+              </div>
+
+              {/* قسم السعرات الحرارية بتصميم بطاقة نظيفة */}
+              <div className="bg-white border border-stone-200/70 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-stone-100">
+                  <div className="w-7 h-7 rounded-full bg-stone-50 flex items-center justify-center shrink-0 border border-stone-100">
+                    <Sparkles className="w-3.5 h-3.5 text-[#C59B27]" />
+                  </div>
+                  <h4 className="text-xs font-black text-stone-800">
+                    {isAr ? "دليل السعرات الحرارية" : "Calorie Guide"}
+                  </h4>
+                </div>
+                <ul className="text-[10.5px] sm:text-[11px] text-stone-600 font-medium leading-relaxed space-y-2.5 text-right rtl:text-right ltr:text-left list-disc list-inside marker:text-[#C59B27]">
+                  <li>{isAr ? "يحتاج الرجال إلى 2500 سعرة حرارية في المتوسط يومياً وقد تختلف الاحتياجات الفردية من شخص لآخر." : "Men need an average of 2,500 calories a day. Individual needs may vary."}</li>
+                  <li>{isAr ? "تحتاج المرأة إلى 2000 سعرة حرارية في المتوسط يومياً وقد تختلف الاحتياجات الفردية من شخص لآخر." : "Women need an average of 2,000 calories a day. Individual needs may vary."}</li>
+                  <li>{isAr ? "يحتاج الأطفال الصغار إلى 1000 - 1800 سعرة حرارية والمراهقون 1800 - 2000 في المتوسط يومياً وقد تختلف من شخص لآخر." : "Children need 1,000 - 1,800 calories and teens 1,800 - 2,000 a day."}</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          
 
         </div>
 

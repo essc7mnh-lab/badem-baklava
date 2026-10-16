@@ -243,14 +243,27 @@ export default function Home() {
                 >
                   <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
                     <div className="absolute bottom-1 w-3/4 h-2.5 bg-[#4A0E17]/15 rounded-full blur-xs pointer-events-none" />
-                    <div
+                  <div
                       className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-transform duration-300 ${
                         selectedCategory === "All"
-                          ? "bg-[#4A0E17] text-[#E5C058] scale-110 shadow-lg"
+                          ? "bg-[#4A0E17] text-[#E5C058] scale-110 shadow-[0_8px_15px_rgba(74,14,23,0.3)]"
                           : "bg-white text-stone-700 border border-stone-200 group-hover:scale-105"
                       }`}
                     >
-                      <Sparkles className="w-6 h-6" />
+                      {/* أيقونة شعار B الفخمة بدلاً من النجمة */}
+                      <div className={`flex items-center justify-center w-6 h-9 sm:w-7 sm:h-10 border-[1.5px] rounded-[50%] transition-colors duration-300 ${
+                        selectedCategory === "All"
+                          ? "border-[#E5C058] shadow-[0_0_8px_rgba(229,192,88,0.4)]"
+                          : "border-[#4A0E17]/50 group-hover:border-[#4A0E17]"
+                      }`}>
+                        <span className={`font-serif text-base sm:text-xl font-bold tracking-tighter ml-0.5 transition-colors duration-300 ${
+                          selectedCategory === "All"
+                            ? "text-[#E5C058]"
+                            : "text-[#4A0E17]/80 group-hover:text-[#4A0E17]"
+                        }`}>
+                          B
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <span
