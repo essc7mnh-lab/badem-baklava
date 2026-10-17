@@ -19,7 +19,7 @@ export default async function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#2A050A",
+          backgroundColor: "#32060B", // عنابي ملكي داكن جداً ليعطي تبايناً حاداً للذهب
           position: "relative",
         }}
       >
@@ -31,98 +31,74 @@ export default async function Image() {
             bottom: 24,
             left: 24,
             right: 24,
-            border: "2px solid #C59B27",
-            borderRadius: 24,
+            border: "3px solid #C59B27",
+            borderRadius: 28,
             display: "flex",
           }}
         />
 
-        {/* الحاوية المركزية المحمية لأبعاد واتساب */}
+        {/* الحاوية المركزية - تركيز كامل على الرمز واسم البراند فقط */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            width: "520px",
           }}
         >
-          {/* الإطار البيضاوي لحرف B */}
+          {/* الإطار البيضاوي الملكي (مكبر وسميك ليظهر في أصغر شاشة) */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              width: "75px",
-              height: "115px",
-              border: "3.5px solid #E5C058",
+              width: "130px",
+              height: "190px",
+              border: "7px solid #F3DC8B",
               borderRadius: "50%",
-              marginBottom: "16px",
+              marginBottom: "20px",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
             }}
           >
             <span
               style={{
                 fontFamily: "serif",
-                fontSize: "56px",
-                fontWeight: "bold",
-                color: "#E5C058",
+                fontSize: "105px",
+                fontWeight: "900",
+                color: "#F3DC8B",
+                lineHeight: 1,
               }}
             >
               B
             </span>
           </div>
 
-          {/* BADEM */}
+          {/* BADEM بحجم ضخم وخط عريض وحاد */}
           <div
             style={{
               fontFamily: "serif",
-              fontSize: "62px",
-              fontWeight: "bold",
-              letterSpacing: "0.24em",
-              color: "#E5C058",
-              marginBottom: "4px",
+              fontSize: "82px",
+              fontWeight: "900",
+              letterSpacing: "0.22em",
+              color: "#F3DC8B",
+              marginBottom: "8px",
+              textShadow: "0 4px 20px rgba(0,0,0,0.7)",
             }}
           >
             BADEM
           </div>
 
-          {/* BAKLAVA */}
+          {/* BAKLAVA واضحة وبارزة */}
           <div
             style={{
               fontFamily: "serif",
-              fontSize: "20px",
-              letterSpacing: "0.5em",
+              fontSize: "26px",
+              letterSpacing: "0.55em",
               color: "#FAF5ED",
-              fontWeight: 600,
-              marginBottom: "24px",
+              fontWeight: "700",
             }}
           >
             BAKLAVA
-          </div>
-
-          {/* تفاصيل الهوية بالإنجليزية لمنع أي خطأ خطوط */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: "#E5C058",
-              fontSize: "13px",
-              letterSpacing: "0.3em",
-              fontWeight: "bold",
-            }}
-          >
-            ROYAL TURKISH CONFECTIONERY
-          </div>
-
-          <div
-            style={{
-              color: "#C2A882",
-              fontSize: "12px",
-              letterSpacing: "0.25em",
-              marginTop: "8px",
-            }}
-          >
-            RIYADH • SAUDI ARABIA
           </div>
         </div>
       </div>
