@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { Search, Gift, ArrowRight, ArrowLeft, Loader2, Sparkles } from "lucide-react";
+import { Search, Gift, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Footer } from "@/components/layout/Footer";
@@ -92,7 +92,8 @@ export default function Home() {
   const [productsData, setProductsData] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-// جلب البيانات مع دعم التخزين المؤقت الفائق بدون تعليق الـ Hydration
+
+  // جلب البيانات مع دعم التخزين المؤقت الفائق بدون تعليق الـ Hydration
   useEffect(() => {
     let isMounted = true;
 
@@ -243,27 +244,67 @@ export default function Home() {
                 >
                   <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
                     <div className="absolute bottom-1 w-3/4 h-2.5 bg-[#4A0E17]/15 rounded-full blur-xs pointer-events-none" />
-                  <div
+                    <div
                       className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-transform duration-300 ${
                         selectedCategory === "All"
                           ? "bg-[#4A0E17] text-[#E5C058] scale-110 shadow-[0_8px_15px_rgba(74,14,23,0.3)]"
-                          : "bg-white text-stone-700 border border-stone-200 group-hover:scale-105"
+                          : "bg-white text-[#4A0E17]/80 group-hover:text-[#4A0E17] border border-stone-200 group-hover:scale-105"
                       }`}
                     >
-                      {/* أيقونة شعار B الفخمة بدلاً من النجمة */}
-                      <div className={`flex items-center justify-center w-6 h-9 sm:w-7 sm:h-10 border-[1.5px] rounded-[50%] transition-colors duration-300 ${
-                        selectedCategory === "All"
-                          ? "border-[#E5C058] shadow-[0_0_8px_rgba(229,192,88,0.4)]"
-                          : "border-[#4A0E17]/50 group-hover:border-[#4A0E17]"
-                      }`}>
-                        <span className={`font-serif text-base sm:text-xl font-bold tracking-tighter ml-0.5 transition-colors duration-300 ${
+                      {/* 🌟 أيقونة شعار بادَم الهندسية المعتمدة (الإطار البيضاوي + حرف B وحبة اللوز) */}
+                      <svg
+                        viewBox="0 0 100 150"
+                        className={`w-7 h-10 sm:w-8 sm:h-11 overflow-visible transition-all duration-300 ${
                           selectedCategory === "All"
-                            ? "text-[#E5C058]"
-                            : "text-[#4A0E17]/80 group-hover:text-[#4A0E17]"
-                        }`}>
-                          B
-                        </span>
-                      </div>
+                            ? "drop-shadow-[0_0_8px_rgba(229,192,88,0.45)]"
+                            : ""
+                        }`}
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        {/* الإطار البيضاوي الخارجي */}
+                        <rect
+                          x="14"
+                          y="8"
+                          width="72"
+                          height="134"
+                          rx="36"
+                          stroke="currentColor"
+                          strokeWidth="5.5"
+                        />
+
+                        {/* رسم حرف B وحبة اللوز المتطابق مع الهوية */}
+                        <g
+                          stroke="currentColor"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {/* 1. القوس الخارجي للوزة */}
+                          <path
+                            d="M 44 76 C 32 70, 33 44, 48 31 C 63 42, 66 66, 47 77"
+                            strokeWidth="4.5"
+                          />
+
+                          {/* 2. العرق القصير في قمة اللوزة */}
+                          <path d="M 47 32 C 46 38, 45 43, 44.5 47" strokeWidth="3" />
+
+                          {/* 3. العرق الأوسط المنحني */}
+                          <path d="M 49.5 33 C 52.5 46, 51.5 58, 48.5 67" strokeWidth="3.2" />
+
+                          {/* 4. العرق الأيمن الداخلي */}
+                          <path d="M 55.5 51 C 56.5 61, 53.5 70, 47 77" strokeWidth="3.2" />
+
+                          {/* 5. الساق العمودية لحرف B */}
+                          <path d="M 43 56 C 43.5 73, 46 92, 49.5 110" strokeWidth="4.8" />
+
+                          {/* 6. البطن السفلي والذيل الأيسر الملتف */}
+                          <path
+                            d="M 47 77 C 70 77, 72 110, 50 111 C 41 111.5, 34 107, 30 99"
+                            strokeWidth="4.8"
+                          />
+                        </g>
+                      </svg>
                     </div>
                   </div>
                   <span

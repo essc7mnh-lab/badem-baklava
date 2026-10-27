@@ -1,8 +1,62 @@
 "use client";
 
 import React, { useState } from "react";
-
 import { useLanguage } from "@/context/LanguageContext";
+// 🌟 مكون الشعار المصغر المعتمد لهوية بادَم (مطابق 100% لتشريح الشعار الأصلي)
+const BademMiniLogo: React.FC = () => (
+  <span className="inline-flex items-center justify-center w-5 h-7 md:w-6 md:h-8 shrink-0">
+    <svg
+      viewBox="0 0 100 150"
+      className="w-full h-full overflow-visible"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {/* الإطار البيضاوي الخارجي */}
+      <rect
+        x="14"
+        y="8"
+        width="72"
+        height="134"
+        rx="36"
+        stroke="#E5C058"
+        strokeWidth="6.5"
+      />
+
+      {/* رسم حرف B وحبة اللوز بنفس انحناءات وفراغات الشعار الأصلي */}
+      <g
+        stroke="#E5C058"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {/* 1. القوس الخارجي للوزة (يلتف من اليسار حول الساق، ويتسع من اليمين ليشكل خصر الـ B) */}
+        <path
+          d="M 44 76 C 32 70, 33 44, 48 31 C 63 42, 66 66, 47 77"
+          strokeWidth="5"
+        />
+
+        {/* 2. العرق القصير في قمة اللوزة (الخط الصغير الأيسر أعلى اللوزة) */}
+        <path d="M 47 32 C 46 38, 45 43, 44.5 47" strokeWidth="3.2" />
+
+        {/* 3. العرق الأوسط المنحني (ينبع من القمة ويقف حراً في الفراغ الأوسط) */}
+        <path d="M 49.5 33 C 52.5 46, 51.5 58, 48.5 67" strokeWidth="3.6" />
+
+        {/* 4. العرق الأيمن الداخلي (يوازي جدار اللوزة الأيمن ويندمج في الخصر) */}
+        <path d="M 55.5 51 C 56.5 61, 53.5 70, 47 77" strokeWidth="3.5" />
+
+        {/* 5. الساق العمودية المائلة بنعومة (تبدأ رفيعة من داخل اللوزة وتنزل للقاعدة) */}
+        <path d="M 43 56 C 43.5 73, 46 92, 49.5 110" strokeWidth="5.2" />
+
+        {/* 6. البطن السفلي العريض لحرف B مع الذيل الأيسر النحيف الملتف للأعلى */}
+        <path
+          d="M 47 77 C 70 77, 72 110, 50 111 C 41 111.5, 34 107, 30 99"
+          strokeWidth="5.2"
+        />
+      </g>
+    </svg>
+  </span>
+);
+  
 
 export const BrandStoryMarquee: React.FC = () => {
   const { language } = useLanguage();
@@ -42,7 +96,7 @@ export const BrandStoryMarquee: React.FC = () => {
 
   return (
     <div className="w-full py-1">
-      {/* 🌟 الكبسولة  العائمة */}
+      {/* 🌟 الكبسولة العائمة */}
       <div
         onClick={() => setIsPaused((prev) => !prev)}
         role="button"
@@ -114,7 +168,7 @@ export const BrandStoryMarquee: React.FC = () => {
 
         {/* مسار النصوص الدائري اللانهائي */}
         <div className="royal-container flex overflow-hidden w-full" dir="ltr">
-         {/* المسار الأول */}
+          {/* المسار الأول */}
           <div
             className={`${isAr ? "royal-track-ar" : "royal-track-en"} ${
               isPaused ? "royal-track-paused" : ""
@@ -127,9 +181,7 @@ export const BrandStoryMarquee: React.FC = () => {
                 dir={isAr ? "rtl" : "ltr"}
               >
                 {/* الشعار المصغر المخصص للبراند */}
-                <span className="flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full border border-[#E5C058]/80 bg-gradient-to-b from-[#E5C058]/20 to-transparent text-[#E5C058] font-serif font-bold text-[10px] md:text-[12px] shrink-0 shadow-[0_0_4px_rgba(229,192,88,0.4)]">
-                  B
-                </span>
+                <BademMiniLogo />
                 <span className="drop-shadow-xs">{text}</span>
                 <span className="text-[#C59B27]/60 mx-2 text-[10px]">✦</span>
               </div>
@@ -150,9 +202,7 @@ export const BrandStoryMarquee: React.FC = () => {
                 dir={isAr ? "rtl" : "ltr"}
               >
                 {/* الشعار المصغر المخصص للبراند */}
-                <span className="flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full border border-[#E5C058]/80 bg-gradient-to-b from-[#E5C058]/20 to-transparent text-[#E5C058] font-serif font-bold text-[10px] md:text-[12px] shrink-0 shadow-[0_0_4px_rgba(229,192,88,0.4)]">
-                  B
-                </span>
+                <BademMiniLogo />
                 <span className="drop-shadow-xs">{text}</span>
                 <span className="text-[#C59B27]/60 mx-2 text-[10px]">✦</span>
               </div>
