@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
@@ -28,6 +28,13 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
 
   const [banners, setBanners] = useState<BannerItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // مراجع تتبع حركة اللمس والسحب لمنع التداخل مع النقر العادي
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
+  const touchEndX = useRef<number>(0);
+  const isDragging = useRef<boolean>(false);
+  const hasSwiped = useRef<boolean>(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,20 +68,111 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
     };
   }, []);
 
+  // تشغيل التبديل التلقائي مع إعادة ضبط المؤقت عند كل سحب يدوي
   useEffect(() => {
     if (banners.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % banners.length);
     }, 6000);
     return () => clearInterval(interval);
-  }, [banners.length]);
+  }, [banners.length, currentIndex]);
 
   if (banners.length === 0) return null;
 
   const current = banners[currentIndex] || banners[0];
 
-  // دالة النقر: التوجيه للقسم المطلوب والانزلاق السلس
+  // دوال الانتقال
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev + 1) % banners.length);
+  };
+
+  const handlePrev = () => {
+    setCurrentIndex((prev) => (prev - 1 + banners.length) % banners.length);
+  };
+
+  // 🌟 معالجة اللمس للجوال (Touch Gestures)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    touchEndX.current = e.touches[0].clientX;
+    hasSwiped.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+    const diffX = Math.abs(touchEndX.current - touchStartX.current);
+    const diffY = Math.abs(e.touches[0].clientY - touchStartY.current);
+
+    // إذا كانت الحركة أفقية وأكبر من 10px يتم اعتبارها سحباً
+    if (diffX > 10 && diffX > diffY) {
+      hasSwiped.current = true;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    const diffX = touchStartX.current - touchEndX.current;
+    const minSwipeDistance = 45; // المسافة الأدنى لاعتماد السحب
+
+    if (Math.abs(diffX) > minSwipeDistance) {
+      if (diffX > 0) {
+        // سحب لليسار -> التالي
+        handleNext();
+      } else {
+        // سحب لليمين -> السابق
+        handlePrev();
+      }
+    }
+
+    setTimeout(() => {
+      hasSwiped.current = false;
+    }, 120);
+  };
+
+  // 🌟 معالجة السحب بالماوس للكمبيوتر (Mouse Drag)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    touchStartX.current = e.clientX;
+    touchEndX.current = e.clientX;
+    isDragging.current = true;
+    hasSwiped.current = false;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    touchEndX.current = e.clientX;
+    if (Math.abs(touchEndX.current - touchStartX.current) > 10) {
+      hasSwiped.current = true;
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    const diffX = touchStartX.current - touchEndX.current;
+    const minSwipeDistance = 45;
+
+    if (Math.abs(diffX) > minSwipeDistance) {
+      if (diffX > 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
+    }
+
+    setTimeout(() => {
+      hasSwiped.current = false;
+    }, 120);
+  };
+
+  const handleMouseLeave = () => {
+    if (isDragging.current) {
+      handleMouseUp();
+    }
+  };
+
+  // دالة النقر: لا تتفاعل إذا كان المستخدم يقوم بسحب الشريحة
   const handleBannerAction = () => {
+    if (hasSwiped.current) return;
+
     if (current.target_category_slug && onSelectCategory) {
       onSelectCategory(current.target_category_slug);
     }
@@ -88,7 +186,6 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
     }
   };
 
-  // فحص هل البانر يحتوي على نصوص مكتوبة، أم أنه تصميم بوستر كامل جاهز
   const hasText = Boolean(
     (current.title_ar && current.title_ar.trim()) ||
     (current.title_en && current.title_en.trim())
@@ -98,7 +195,14 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
     <section className="w-full max-w-5xl mx-auto px-3 sm:px-6 my-3 sm:my-6 select-none">
       <div
         onClick={handleBannerAction}
-        className={`relative w-full rounded-2xl sm:rounded-3xl overflow-hidden border border-[#C59B27]/25 shadow-xl cursor-pointer transition-transform duration-300 hover:shadow-2xl active:scale-[0.99] group ${
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        className={`relative w-full rounded-2xl sm:rounded-3xl overflow-hidden border border-[#C59B27]/25 shadow-xl cursor-pointer transition-transform duration-300 hover:shadow-2xl active:scale-[0.99] group touch-pan-y ${
           hasText
             ? "bg-gradient-to-r from-[#4A0E17] via-[#3D0A11] to-[#36070E] p-4 sm:p-7 md:p-9"
             : "p-0 aspect-[16/8] sm:aspect-[21/9] md:aspect-[2.4/1] bg-[#4A0E17]"
@@ -110,17 +214,17 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
             <Image
               key={current.image_url}
               src={current.image_url}
-              alt="عرض بادَم "
+              alt="عرض بادَم"
               fill
               priority
               quality={92}
               sizes="(max-width: 1024px) 100vw, 1200px"
-              className="object-cover object-center w-full h-full transition-transform duration-500 group-hover:scale-105"
+              className="object-cover object-center w-full h-full transition-transform duration-500 group-hover:scale-105 pointer-events-none"
             />
           </div>
         ) : (
           /* الحالة الثانية: صورة مفرغة طافية + نصوص وزر طلب مبرمج */
-          <div className="flex items-center justify-between gap-3 sm:gap-6 relative z-10">
+          <div className="flex items-center justify-between gap-3 sm:gap-6 relative z-10 pointer-events-none">
             <div className="flex-1 min-w-0 space-y-2 sm:space-y-3 text-white rtl:text-right ltr:text-left">
               {current.tag_ar && (
                 <span className="inline-flex items-center gap-1 bg-[#C59B27]/20 border border-[#C59B27]/40 text-[#E5C058] text-[9.5px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full">
@@ -161,7 +265,7 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onSelectCategory }
                   priority
                   quality={90}
                   sizes="(max-width: 640px) 130px, (max-width: 768px) 220px, 300px"
-                  className="object-contain drop-shadow-[0_12px_24px_rgba(0,0,0,0.45)] transition-transform duration-500 group-hover:scale-105"
+                  className="object-contain drop-shadow-[0_12px_24px_rgba(0,0,0,0.45)] transition-transform duration-500 group-hover:scale-105 pointer-events-none"
                 />
               </div>
             )}

@@ -28,28 +28,29 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-// 🌟 إعدادات الـ SEO الرسمية المعتمدة لمحركات البحث وشبكات التواصل
+// 🌟 إعدادات الـ SEO الرسمية المعتمدة لظهور اسم "متجر بادم" فوق الرابط
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.bademsa.com"),
-  applicationName: "متجر بادَم للبقلاوة الفاخرة",
+  applicationName: "متجر بادم",
   title: {
-    default: "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
-    template: "%s | متجر بادَم للبقلاوة الفاخرة",
+    default: "متجر بادم | للبقلاوة التركية الفاخرة",
+    template: "%s | متجر بادم",
   },
   description:
     "أفخر أنواع البقلاوة التركية الفاخرة بالفستق العنتابي والسمن البلدي النقي. طازجة مع توصيل سريع لكافة مناطق الرياض.",
   keywords: [
-    "بادم",
     "متجر بادم",
+    "بادم",
     "بقلاوة بادم",
     "BADEM BAKLAVA",
-    "متجر بادام",
     "بقلاوة تركية الرياض",
-    "بقلاوة فستق عنتابي",
     "حلويات تركية الرياض",
-    "متجر حلا الرياض",
     "حلويات شارع التخصصي",
     "بقلاوة فاخرة السعودية",
+    "بقلاوة بادم",
+    "BADEM BAKLAVA",
+    "بقلاوة فستق عنتابي",
+    "متجر حلا الرياض",
     "طلب بقلاوة اونلاين",
     "أفضل بقلاوة في الرياض",
     "بوكس بقلاوة مشكل",
@@ -59,16 +60,16 @@ export const metadata: Metadata = {
     canonical: "https://www.bademsa.com",
   },
   openGraph: {
-    title: "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
-    description: "أصالة البقلاوة التركية الفاخرة بالفستق العنتابي الأصلي والسمن البلدي.",
+    title: "متجر بادم | للبقلاوة التركية الفاخرة",
+    description: "أصالة البقلاوة التركية الفاخرة بالفستق العنتابي الأصلي والسمن البلدي النقي.",
     url: "https://www.bademsa.com",
-    siteName: "متجر بادَم للبقلاوة الفاخرة", // 🌟 هذا السطر يقرأه Google مباشرة لتحديد اسم الموقع
+    siteName: "متجر بادم",
     locale: "ar_SA",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
+    title: "متجر بادم | للبقلاوة التركية الفاخرة",
     description: "أفخر أنواع البقلاوة التركية الطازجة في الرياض.",
   },
   verification: {
@@ -92,29 +93,30 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // 🌟 سكيما WebSite المستقلة والمعتمدة رسمياً من Google لإظهار اسم الموقع (Site Name) بدلاً من الدومين
+  // 🌟 سكيما WebSite الرسمية لإجبار محرك البحث على عرض "متجر بادم" كاسم أساسي
   const siteNameSchema = {
     "@context": "https://schema.org",
     "@type": "WebSite",
     "@id": "https://www.bademsa.com/#website",
-    "url": "https://www.bademsa.com/",
-    "name": "متجر بادَم للبقلاوة الفاخرة",
+    "url": "https://www.bademsa.com",
+    "name": "متجر بادم",
     "alternateName": [
       "بادم",
-      "متجر بادم",
-      "BADEM BAKLAVA",
-      "Badem Baklava",
-      "بقلاوة بادم"
+      "بادَم",
+      "متجر بادَم",
+      "بقلاوة بادم",
+      "BADEM",
+      "BADEM BAKLAVA"
     ]
   };
 
-  // 🌟 سكيما المتجر والفرع لظهور تقييمات المتجر وموقعه على خرائط الرياض
+  // 🌟 سكيما النشاط التجاري والفرع
   const storeSchema = {
     "@context": "https://schema.org",
     "@type": "Bakery",
     "@id": "https://www.bademsa.com/#store",
-    "name": "BADEM BAKLAVA | متجر بادَم للبقلاوة الفاخرة",
-    "url": "https://www.bademsa.com/",
+    "name": "متجر بادم للبقلاوة الفاخرة",
+    "url": "https://www.bademsa.com",
     "telephone": "+966592320106",
     "priceRange": "$$",
     "address": {
@@ -138,23 +140,21 @@ export default function RootLayout({
 
   return (
     <html lang="ar" dir="rtl" className={`${tajawal.variable} ${playfair.variable}`}>
-      <head>
-        {/* سكيما اسم الموقع الرسمية لـ Google Site Names */}
+      <body className="antialiased min-h-screen bg-[#F4ECE1] text-[#2D2321]">
+        {/* حقن السكيما داخل body متوافق مع معمارية Next.js App Router */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(siteNameSchema),
           }}
         />
-        {/* سكيما تفاصيل المتجر والفرع */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(storeSchema),
           }}
         />
-      </head>
-      <body className="antialiased min-h-screen bg-[#F4ECE1] text-[#2D2321]">
+
         <ToastProvider>
           <LanguageProvider>
             <UserProvider>

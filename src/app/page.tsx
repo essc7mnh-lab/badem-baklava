@@ -210,6 +210,9 @@ export default function Home() {
       <Navbar />
 
       <main className="w-full max-w-md md:max-w-6xl mx-auto px-3 sm:px-4 py-4 space-y-6 flex-1">
+        {/* 🌟 وسم H1 المعتمد لـ Google Site Names */}
+        <h1 className="sr-only">متجر بادم للبقلاوة الفاخرة</h1>
+
         {/* شريط البحث */}
         <div className="relative w-full">
           <input
