@@ -54,13 +54,13 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   const [isCartBouncing, setIsCartBouncing] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // حالات الكوبون الخام
+  // حالات الكوبون
   const [rawDiscountPercent, setRawDiscountPercent] = useState(0);
   const [couponCode, setCouponCode] = useState("");
   const [couponMinAmount, setCouponMinAmount] = useState<number | null>(null);
   const [rawCouponMessage, setRawCouponMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // مؤقتات الحركات لمنع تسرب الذاكرة مع تخزين المرجع محلياً
+  // مؤقتات الحركات لمنع تسرب الذاكرة
   const animationTimers = useRef<NodeJS.Timeout[]>([]);
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  // 1. استرجاع السلة بأمان وبشكل غير متزامن لتفادي تعليق التصيير الأولي
+  // 1. استرجاع السلة وتنقيتها بأمان
   useEffect(() => {
     const initTimer = setTimeout(() => {
       try {
@@ -79,7 +79,15 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
           if (savedCart) {
             const parsed = JSON.parse(savedCart);
             if (Array.isArray(parsed)) {
-              setCart(parsed);
+              // تنقية العناصر وضمان سلامة البيانات
+              const sanitized: CartItem[] = parsed
+                .filter((item) => item && item.id)
+                .map((item) => ({
+                  ...item,
+                  price: Math.max(0, Number(item.price) || 0),
+                  quantity: Math.max(1, Math.min(99, Number(item.quantity) || 1)),
+                }));
+              setCart(sanitized);
             }
           }
         }
@@ -104,7 +112,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [cart, isCartLoaded]);
 
-  // الحسابات الرياضية المجمعة
+  // الحسابات المالية المجمعة
   const subtotal = useMemo(() => {
     return cart.reduce((acc, item) => {
       const price = Number(item.price) || 0;
@@ -117,7 +125,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     return cart.reduce((acc, item) => acc + (Number(item.quantity) || 1), 0);
   }, [cart]);
 
-  // 3. حساب حالة الكوبون المشتقة تلقائياً دون الحاجة لـ useEffect يسبب إعادة تصيير متتالية
+  // 3. حالة الكوبون المشتقة تلقائياً
   const isCouponBelowMin = Boolean(
     couponCode && couponMinAmount !== null && subtotal < couponMinAmount
   );
@@ -138,15 +146,16 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     return (subtotal * discountPercent) / 100;
   }, [subtotal, discountPercent]);
 
+  // 🚚 توحيد رسوم التوصيل التقديرية مع الفاتورة المعتمدة (35 ر.س)
   const deliveryFee = useMemo(() => {
-    return cart.length > 0 ? 15 : 0;
+    return cart.length > 0 ? 35 : 0;
   }, [cart.length]);
 
   const totalAmount = useMemo(() => {
     return Math.max(0, subtotal - discountAmount + deliveryFee);
   }, [subtotal, discountAmount, deliveryFee]);
 
-  // تشغيل حركة طيران المنتج وارتداد السلة
+  // تشغيل حركة طيران المنتج
   const triggerFlyAnimation = useCallback((image: string, event?: React.MouseEvent) => {
     if (typeof window === "undefined") return;
 
@@ -197,7 +206,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     animationTimers.current.push(flyTimer);
   }, []);
 
-  // إضافة صنف للسلة
+  // إضافة صنف للسلة بذكاء وحماية سقف الكميات
   const addToCart = useCallback(
     (newItem: Omit<CartItem, "quantity">, clickEvent?: React.MouseEvent) => {
       triggerFlyAnimation(newItem.image || "/hero-baklava.png", clickEvent);
@@ -209,9 +218,10 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (existingIndex > -1) {
           const updated = [...prevCart];
+          const nextQty = Math.min(99, updated[existingIndex].quantity + 1);
           updated[existingIndex] = {
             ...updated[existingIndex],
-            quantity: updated[existingIndex].quantity + 1,
+            quantity: nextQty,
           };
           return updated;
         }
@@ -222,7 +232,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     [triggerFlyAnimation]
   );
 
-  // تحديث كمية صنف
+  // تحديث كمية صنف (مع الحفاظ على سقف منطقي)
   const updateQuantity = useCallback((index: number, delta: number) => {
     setCart((prevCart) => {
       if (!prevCart[index]) return prevCart;
@@ -237,7 +247,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
       const updated = [...prevCart];
       updated[index] = {
         ...updated[index],
-        quantity: newQty,
+        quantity: Math.min(99, newQty),
       };
       return updated;
     });
@@ -272,7 +282,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     setRawCouponMessage(null);
   }, []);
 
-  // تطبيق وفحص كود الخصم
+  // فحص وتطبيق الكوبون
   const applyCoupon = useCallback(
     async (code: string) => {
       const cleanCode = code.trim().toUpperCase();

@@ -51,6 +51,7 @@ interface CategoryItem {
   name_ar: string;
   name_en: string;
   image_url: string;
+  sort_order?: number;
 }
 
 interface RawSupabaseProduct {
@@ -70,13 +71,13 @@ interface RawSupabaseProduct {
   has_weights?: boolean | null;
 }
 
-// مفاتيح الكاش المحلي المؤقت
+// ⚡ كاش محلي ذكي فائق السرعة
 const CACHE_KEYS = {
-  PRODUCTS: "badem_cached_products",
-  CATEGORIES: "badem_cached_categories",
-  TIMESTAMP: "badem_cache_timestamp",
+  PRODUCTS: "badem_cached_products_v2",
+  CATEGORIES: "badem_cached_categories_v2",
+  TIMESTAMP: "badem_cache_timestamp_v2",
 };
-const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 دقائق
+const CACHE_DURATION_MS = 3 * 60 * 1000; // تحديث صامت كل 3 دقائق
 
 export default function Home() {
   const { language, dir } = useLanguage();
@@ -88,38 +89,41 @@ export default function Home() {
   const [activeProduct, setActiveProduct] = useState<Product | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
-  // حالات البيانات الحقيقية
+  // حالات البيانات
   const [productsData, setProductsData] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // جلب البيانات مع دعم التخزين المؤقت الفائق بدون تعليق الـ Hydration
+  // 🚀 جلب البيانات مع دعم التخزين المؤقت وفك تعارض الـ Render
   useEffect(() => {
     let isMounted = true;
 
-    // 1. استرجاع البيانات غير المتزامن من الكاش لفك تعارض الـ Render
+    // 1. استرجاع الكاش لفتح الصفحة فوراً بـ 0 ثانية
     const cacheTimer = setTimeout(() => {
       try {
-        const cachedTime = sessionStorage.getItem(CACHE_KEYS.TIMESTAMP);
-        const cachedProd = sessionStorage.getItem(CACHE_KEYS.PRODUCTS);
-        const cachedCat = sessionStorage.getItem(CACHE_KEYS.CATEGORIES);
+        const cachedProd = localStorage.getItem(CACHE_KEYS.PRODUCTS);
+        const cachedCat = localStorage.getItem(CACHE_KEYS.CATEGORIES);
 
-        if (cachedTime && cachedProd && cachedCat) {
-          const age = Date.now() - Number(cachedTime);
-          if (age < CACHE_DURATION_MS && isMounted) {
-            setProductsData(JSON.parse(cachedProd));
-            setCategories(JSON.parse(cachedCat));
-            setIsLoading(false);
-          }
+        if (cachedProd && cachedCat && isMounted) {
+          setProductsData(JSON.parse(cachedProd));
+          setCategories(JSON.parse(cachedCat));
+          setIsLoading(false);
         }
       } catch {
         // تجاوز صامت
       }
     }, 0);
 
-    // 2. تحديث ومزامنة البيانات في الخلفية من Supabase
+    // 2. مزامنة البيانات في الخلفية بهدوء
     const fetchData = async () => {
       try {
+        // إذا كان الكاش حديثاً، لا نرسل استعلاماً لقاعدة البيانات لتوفير الموارد
+        const cachedTime = localStorage.getItem(CACHE_KEYS.TIMESTAMP);
+        const cachedProd = localStorage.getItem(CACHE_KEYS.PRODUCTS);
+        if (cachedTime && cachedProd && Date.now() - Number(cachedTime) < CACHE_DURATION_MS) {
+          return;
+        }
+
         const [{ data: prodData, error: prodError }, { data: catData }] = await Promise.all([
           supabase.from("products").select("*").order("created_at", { ascending: false }),
           supabase.from("categories").select("*").order("sort_order", { ascending: true }),
@@ -164,15 +168,15 @@ export default function Home() {
             setCategories(formattedCats);
           }
 
-          // تحديث الكاش المحلي
+          // حفظ البيانات في الكاش السريع
           try {
             if (formattedList.length > 0) {
-              sessionStorage.setItem(CACHE_KEYS.PRODUCTS, JSON.stringify(formattedList));
+              localStorage.setItem(CACHE_KEYS.PRODUCTS, JSON.stringify(formattedList));
             }
             if (formattedCats.length > 0) {
-              sessionStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(formattedCats));
+              localStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(formattedCats));
             }
-            sessionStorage.setItem(CACHE_KEYS.TIMESTAMP, Date.now().toString());
+            localStorage.setItem(CACHE_KEYS.TIMESTAMP, Date.now().toString());
           } catch {
             // تجاوز صامت
           }
@@ -192,31 +196,48 @@ export default function Home() {
     };
   }, []);
 
-  // فلترة المنتجات بالبحث والتصنيف
+  // 🎯 فلترة وترتيب المنتجات حسب أولوية الأقسام (O(1) Map)
   const filteredProducts = useMemo(() => {
-    return productsData.filter((p) => {
+    const categoryOrderMap = new Map<string, number>();
+    categories.forEach((cat, index) => {
+      categoryOrderMap.set(cat.slug, cat.sort_order ?? index);
+    });
+
+    const cleanSearch = searchQuery.toLowerCase().trim().slice(0, 100);
+
+    const filtered = productsData.filter((p) => {
       const matchCat = selectedCategory === "All" || p.category === selectedCategory;
-      const cleanSearch = searchQuery.toLowerCase().trim();
       const matchSearch =
         !cleanSearch ||
         p.titleAr?.toLowerCase().includes(cleanSearch) ||
         p.titleEn?.toLowerCase().includes(cleanSearch);
       return matchCat && matchSearch;
     });
-  }, [productsData, selectedCategory, searchQuery]);
+
+    // عند اختيار "الكل"، تعرض منتجات الأقسام حسب تسلسلها
+    if (selectedCategory === "All") {
+      return [...filtered].sort((a, b) => {
+        const orderA = categoryOrderMap.get(a.category) ?? 9999;
+        const orderB = categoryOrderMap.get(b.category) ?? 9999;
+        return orderA - orderB;
+      });
+    }
+
+    return filtered;
+  }, [productsData, categories, selectedCategory, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#F4ECE1] text-[#2D2321] pb-3 md:pb-0 flex flex-col justify-between font-sans">
       <Navbar />
 
       <main className="w-full max-w-md md:max-w-6xl mx-auto px-3 sm:px-4 py-4 space-y-6 flex-1">
-        {/* 🌟 وسم H1 المعتمد لـ Google Site Names */}
         <h1 className="sr-only">متجر بادم للبقلاوة الفاخرة</h1>
 
-        {/* شريط البحث */}
-        <div className="relative w-full">
+        {/* شريط البحث التفاعلي الفوري (Live Search مع قائمة منسدلة) */}
+        <div className="relative w-full z-30">
           <input
             type="text"
+            maxLength={100}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={
@@ -224,12 +245,72 @@ export default function Home() {
                 ? "ابحث عن البقلاوة، أصابع الفستق، أو بوكسات الهدايا..."
                 : "Search baklava, pistachio rolls, gift boxes..."
             }
-            className="w-full bg-[#FAF5ED] border border-[#4A0E17]/15 rounded-2xl py-3 pr-11 pl-4 rtl:pr-11 rtl:pl-4 ltr:pl-11 ltr:pr-4 text-xs md:text-sm font-medium focus:outline-hidden focus:border-[#4A0E17] shadow-2xs placeholder:text-stone-400"
+            className="w-full bg-[#FAF5ED] border border-[#4A0E17]/20 rounded-2xl py-3 pr-11 pl-10 rtl:pr-11 rtl:pl-10 ltr:pl-11 ltr:pr-10 text-xs md:text-sm font-medium focus:outline-hidden focus:border-[#4A0E17] shadow-xs placeholder:text-stone-400 transition"
           />
           <Search className="w-4 h-4 md:w-5 md:h-5 text-stone-400 absolute top-1/2 -translate-y-1/2 right-3.5 rtl:right-3.5 ltr:left-3.5 pointer-events-none" />
+          
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute top-1/2 -translate-y-1/2 left-3.5 rtl:left-3.5 rtl:right-auto ltr:right-3.5 ltr:left-auto text-stone-400 hover:text-stone-600 text-xs cursor-pointer p-1"
+            >
+              ✕
+            </button>
+          )}
+
+          {/* 🔍 القائمة المنسدلة الذكية لنتائج البحث الفورية */}
+          {searchQuery.trim().length >= 1 && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-[#FAF5ED] rounded-2xl border border-[#4A0E17]/20 shadow-2xl overflow-hidden max-h-80 overflow-y-auto no-scrollbar animate-in fade-in zoom-in-95 duration-200 p-2 space-y-1.5">
+              <div className="px-3 py-1 flex items-center justify-between text-[10.5px] font-bold text-stone-500 border-b border-stone-200">
+                <span>{isAr ? "النتائج المطابقة السريعة:" : "Quick Matches:"}</span>
+                <span className="text-[#4A0E17] font-black">{filteredProducts.length} صنف</span>
+              </div>
+
+              {filteredProducts.length === 0 ? (
+                <div className="py-6 text-center text-xs text-stone-400 font-bold">
+                  {isAr ? "لم نجد أصنافاً مطابقة لبحثك." : "No matching items found."}
+                </div>
+              ) : (
+                filteredProducts.slice(0, 6).map((prod) => (
+                  <div
+                    key={prod.id}
+                    onClick={() => {
+                      setActiveProduct(prod);
+                      setSearchQuery("");
+                    }}
+                    className="flex items-center justify-between p-2 rounded-xl hover:bg-white transition cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-white shrink-0 border border-black/5">
+                        <Image
+                          src={prod.image || "/hero-baklava.png"}
+                          alt={prod.titleAr}
+                          fill
+                          sizes="40px"
+                          className="object-cover"
+                        />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-stone-800 group-hover:text-[#4A0E17] transition">
+                          {isAr ? prod.titleAr : prod.titleEn}
+                        </h5>
+                        <span className="text-[10px] text-stone-400 font-medium">
+                          {prod.has_weights !== false ? (isAr ? "متوفر بالأوزان ⚖️" : "Weights available") : (isAr ? "صنف فردي" : "Single item")}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-black text-[#4A0E17] font-mono">
+                      {prod.basePrice.toFixed(2)} ر.س
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
-        {/* البانر الإعلاني وشريط القصة */}
+        {/* البانر وشريط القصة */}
         <div className="space-y-3">
           <PromoCarousel onSelectCategory={(catSlug) => setSelectedCategory(catSlug)} />
           <BrandStoryMarquee />
@@ -254,7 +335,6 @@ export default function Home() {
                           : "bg-white text-[#4A0E17]/80 group-hover:text-[#4A0E17] border border-stone-200 group-hover:scale-105"
                       }`}
                     >
-                      {/* 🌟 أيقونة شعار بادَم الهندسية المعتمدة (الإطار البيضاوي + حرف B وحبة اللوز) */}
                       <svg
                         viewBox="0 0 100 150"
                         className={`w-7 h-10 sm:w-8 sm:h-11 overflow-visible transition-all duration-300 ${
@@ -265,7 +345,6 @@ export default function Home() {
                         fill="none"
                         xmlns="http://www.w3.org/2000/svg"
                       >
-                        {/* الإطار البيضاوي الخارجي */}
                         <rect
                           x="14"
                           y="8"
@@ -275,37 +354,13 @@ export default function Home() {
                           stroke="currentColor"
                           strokeWidth="5.5"
                         />
-
-                        {/* رسم حرف B وحبة اللوز المتطابق مع الهوية */}
-                        <g
-                          stroke="currentColor"
-                          fill="none"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          {/* 1. القوس الخارجي للوزة */}
-                          <path
-                            d="M 44 76 C 32 70, 33 44, 48 31 C 63 42, 66 66, 47 77"
-                            strokeWidth="4.5"
-                          />
-
-                          {/* 2. العرق القصير في قمة اللوزة */}
+                        <g stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M 44 76 C 32 70, 33 44, 48 31 C 63 42, 66 66, 47 77" strokeWidth="4.5" />
                           <path d="M 47 32 C 46 38, 45 43, 44.5 47" strokeWidth="3" />
-
-                          {/* 3. العرق الأوسط المنحني */}
                           <path d="M 49.5 33 C 52.5 46, 51.5 58, 48.5 67" strokeWidth="3.2" />
-
-                          {/* 4. العرق الأيمن الداخلي */}
                           <path d="M 55.5 51 C 56.5 61, 53.5 70, 47 77" strokeWidth="3.2" />
-
-                          {/* 5. الساق العمودية لحرف B */}
                           <path d="M 43 56 C 43.5 73, 46 92, 49.5 110" strokeWidth="4.8" />
-
-                          {/* 6. البطن السفلي والذيل الأيسر الملتف */}
-                          <path
-                            d="M 47 77 C 70 77, 72 110, 50 111 C 41 111.5, 34 107, 30 99"
-                            strokeWidth="4.8"
-                          />
+                          <path d="M 47 77 C 70 77, 72 110, 50 111 C 41 111.5, 34 107, 30 99" strokeWidth="4.8" />
                         </g>
                       </svg>
                     </div>
@@ -321,7 +376,7 @@ export default function Home() {
                   </span>
                 </button>
 
-                {/* قائمة الأقسام */}
+                {/* قائمة الأقسام المجلوبة */}
                 {categories.map((cat, index) => {
                   const isSelected = selectedCategory === cat.slug;
                   const catTitle = isAr ? cat.name_ar : cat.name_en;
@@ -385,7 +440,7 @@ export default function Home() {
             )}
           </div>
 
-          {isLoading ? (
+          {isLoading && productsData.length === 0 ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-stone-400">
               <Loader2 className="w-8 h-8 animate-spin text-[#4A0E17]" />
               <p className="text-xs font-bold text-stone-600">

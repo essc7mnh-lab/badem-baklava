@@ -8,6 +8,9 @@ const supabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// نفس رمز الجلسة المعتمد في تسجيل دخول الإدارة
+const ADMIN_SECRET_SESSION = "badem_authenticated_admin_session_2026";
+
 // الحد الأقصى للحجم: 5 ميجابايت
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 // أنواع الصور الآمنة المسموح بها فقط
@@ -17,6 +20,15 @@ const ALLOWED_TARGETS = ["product", "banner", "category"];
 
 export async function POST(req: NextRequest) {
   try {
+    // 🛡️ 1. فحص أمني: التحقق من أن الرافع هو مسؤول المتجر فقط
+    const adminSession = req.cookies.get("badem_admin_session")?.value;
+    if (!adminSession || adminSession !== ADMIN_SECRET_SESSION) {
+      return NextResponse.json(
+        { error: "غير مصرح لك برفع الصور. يرجى تسجيل الدخول إلى لوحة التحكم أولاً." },
+        { status: 401 }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     let target = (formData.get("target") as string) || "product";
@@ -25,7 +37,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "لم يتم اختيار أي ملف" }, { status: 400 });
     }
 
-    // 🔒 1. فحص الحجم لمنع استهلاك الذاكرة
+    // 🔒 2. فحص الحجم لمنع استهلاك الذاكرة
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "حجم الصورة كبير جداً، الحد الأقصى المسموح به هو 5 ميجابايت" },
@@ -33,7 +45,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 🔒 2. فحص نوع الملف المسموح حصراً
+    // 🔒 3. فحص نوع الملف المسموح حصراً
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
       return NextResponse.json(
         { error: "نوع الملف غير مدعوم، يرجى رفع صور بصيغة JPG أو PNG أو WebP فقط" },
@@ -41,7 +53,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 🔒 3. حماية مسار المجلد
+    // 🔒 4. حماية مسار المجلد
     if (!ALLOWED_TARGETS.includes(target)) {
       target = "product";
     }
@@ -64,7 +76,7 @@ export async function POST(req: NextRequest) {
       quality = 80;
     }
 
-    // ضغط ومعالجة سريعة
+    // ضغط ومعالجة سريعة بصيغة WebP
     const optimizedBuffer = await sharp(buffer)
       .rotate() // تصحيح اتجاه صور الجوال
       .resize({
@@ -75,7 +87,7 @@ export async function POST(req: NextRequest) {
       })
       .webp({
         quality,
-        effort: 3, // توازن مثالي بين سرعة المعالجة وجودة الضغط
+        effort: 3,
         smartSubsample: true,
       })
       .toBuffer();
@@ -83,7 +95,7 @@ export async function POST(req: NextRequest) {
     const fileName = `${target}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.webp`;
     const filePath = `${target}/${fileName}`;
 
-    // الرفع لكلاود Supabase مع كاش طويل الأمد
+    // الرفع لسحابة Supabase مع كاش طويل الأمد
     const { error: uploadError } = await supabase.storage
       .from("store-images")
       .upload(filePath, optimizedBuffer, {

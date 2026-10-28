@@ -537,7 +537,7 @@ export const CustomBoxModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* 2. مؤشر الامتلاء التفاعلي */}
+            {/* 2. مؤشر الامتلاء التفاعلي مع تنويه الميزان المعتمد */}
               <div className="bg-white p-3.5 rounded-2xl border border-stone-200/80 shadow-2xs space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-black">
                   <span className="text-stone-800 flex items-center gap-1.5">
@@ -554,26 +554,27 @@ export const CustomBoxModal: React.FC = () => {
                   >
                     {isReady ? (
                       <>
-                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                         <span>
                           {remainingSlots > 0
                             ? isAr
-                              ? `جاهز (يمكنك إضافة ${remainingSlots} قطع أخرى) ✨`
-                              : `Ready (+${remainingSlots} optional) ✨`
+                              ? "مكتمل ومستوفٍ للوزن "
+                              : "Ready • Weight Met "
                             : isAr
-                            ? "البوكس مكتمل ✨"
-                            : "Box Complete ✨"}
+                            ? "سعة البوكس مكتملة "
+                            : "Box Complete "}
                         </span>
                       </>
                     ) : isAr ? (
-                      `متبقي ${remainingToMin} قطع للحد الأدنى`
+                      `متبقي ${remainingToMin} قطع كحد أدنى`
                     ) : (
                       `${remainingToMin} slots left`
                     )}
                   </span>
                 </div>
 
-                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${maxCapacity}, minmax(0, 1fr))` }}>
+                {/* شريط النقاط المتدرجة */}
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(1, maxCapacity)}, minmax(0, 1fr))` }}>
                   {Array.from({ length: maxCapacity }).map((_, index) => {
                     const isFilled = index < currentCount;
                     return (
@@ -587,6 +588,19 @@ export const CustomBoxModal: React.FC = () => {
                       />
                     );
                   })}
+                </div>
+
+                {/* ⚖️ بطاقة تنبيه الميزان الفاخرة والاحترافية */}
+                <div className="bg-[#FAF5ED] border border-[#C59B27]/35 rounded-xl p-2.5 flex items-center gap-2.5 text-[10.5px] text-[#4A0E17] animate-in fade-in duration-200">
+                  <div className="w-6 h-6 rounded-lg bg-[#4A0E17]/10 flex items-center justify-center shrink-0 text-[#C59B27]">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="leading-snug">
+                    <strong className="text-[#4A0E17] font-black">{isAr ? "معيار التعبئة والوزن:" : "Weight Standard:"}</strong>{" "}
+                    {isAr
+                      ? `التعبئة تخضع للوزن الصافي المعتمد بالميزان، وقد يختلف عدد القطع الفعلي تقريباً (${minCapacity !== maxCapacity ? `${minCapacity} - ${maxCapacity}` : maxCapacity} قطعة) حسب حجم وكثافة الأصناف المختارة.`
+                      : `Packing is calibrated strictly by net scale weight. Piece count varies based on pastry density.`}
+                  </p>
                 </div>
 
                 {currentCount > 0 && (

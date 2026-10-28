@@ -473,8 +473,7 @@ ${payMethodTitle}
 
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
   };
-
-  // ✅ تأكيد الطلب وحفظه في Supabase مع الحفاظ التام على أسعار الأوزان والبوكسات
+// ✅ تأكيد الطلب واستدعاء السيرفر الآمن
   const handleConfirmOrder = async () => {
     if (deliveryMode === "delivery") {
       if (!isCityValid) {
@@ -493,224 +492,43 @@ ${payMethodTitle}
     if (cart.length === 0) return;
     setIsProcessing(true);
 
-    let verifiedSubtotal = 0;
-    const verifiedItems: Array<{
-      title: string;
-      portion: string;
-      portionNote: string;
-      quantity: number;
-      price: number;
-      is_custom_box?: boolean;
-    }> = [];
-
     try {
-      // جلب إعدادات صانع البوكسات لمعرفة نمط التسعير (ثابت أم ديناميكي)
-      const { data: boxSettingsData } = await supabase
-        .from("box_builder_settings")
-        .select("pricing_mode, packaging_fee")
-        .eq("id", "default")
-        .maybeSingle();
-
-      const isDynamicBoxPricing = boxSettingsData?.pricing_mode === "dynamic";
-      const boxPackagingFee = Number(boxSettingsData?.packaging_fee) || 0;
-
-      for (const cartItem of cart as CartProductItem[]) {
-        if (cartItem.type === "custom_box" || cartItem.tierId) {
-          let officialBoxPrice = Number(cartItem.price);
-          let maxCapacity = 0;
-          let minCapacity = 0;
-
-          const { data: tierData } = await supabase
-            .from("custom_box_tiers")
-            .select("price, capacity, name_ar, subtitle_ar")
-            .eq("id", cartItem.tierId)
-            .maybeSingle();
-
-          if (tierData) {
-            maxCapacity = Number(tierData.capacity) || 0;
-            minCapacity = maxCapacity;
-
-            // فحص المدى المرن لعدد القطع في الميزان (مثلاً: "6 - 8 قطعة")
-            const sub = String(tierData.subtitle_ar || "");
-            const rangeMatch = sub.match(/(\d+)\s*[-–—إلى]+\s*(\d+)/);
-            if (rangeMatch && rangeMatch.length >= 3) {
-              const first = parseInt(rangeMatch[1], 10);
-              const second = parseInt(rangeMatch[2], 10);
-              minCapacity = Math.min(first, second);
-              maxCapacity = Math.max(first, second, maxCapacity);
-            }
-
-            if (isDynamicBoxPricing && Array.isArray(cartItem.items) && cartItem.items.length > 0) {
-              const dynamicSum = cartItem.items.reduce(
-                (sum, it) => sum + Number(it.unitPrice || 0) * Number(it.quantity || 0),
-                0
-              );
-              officialBoxPrice = dynamicSum > 0 ? dynamicSum + boxPackagingFee : Number(cartItem.price);
-            } else {
-              officialBoxPrice = Number(tierData.price) || Number(cartItem.price);
-            }
-          }
-
-          if (Array.isArray(cartItem.items) && maxCapacity > 0) {
-            const totalPieces = cartItem.items.reduce((sum: number, it) => sum + Number(it.quantity || 0), 0);
-            if (totalPieces < minCapacity || totalPieces > maxCapacity) {
-              throw new Error(`سعة البوكس غير مكتملة (${totalPieces} من أصل ${minCapacity}-${maxCapacity} قطع).`);
-            }
-          }
-
-          const boxItemTotal = officialBoxPrice * Number(cartItem.quantity || 1);
-          verifiedSubtotal += boxItemTotal;
-          verifiedItems.push({
-            title: cartItem.title,
-            portion: cartItem.portion || cartItem.summaryText || "تشكيلة مخصصة",
-            portionNote: cartItem.portionNote || `بوكس مخصص (${maxCapacity} قطع)`,
-            quantity: Number(cartItem.quantity || 1),
-            price: officialBoxPrice,
-            is_custom_box: true,
-          });
-        } else {
-          // ⚖️ حساب السعر الصحيح للمنتج حسب الوزن المختار (ربع كيلو / نصف كيلو / 1 كيلو) دون إرجاعه إلى 45 ر.س
-          const { data: dbProduct } = await supabase
-            .from("products")
-            .select("*")
-            .or(`title_ar.eq.${cartItem.title},title_en.eq.${cartItem.title}`)
-            .maybeSingle();
-
-          const cartUnitPrice = Number(cartItem.price) || 0;
-          const portionText = String(cartItem.portionNote || cartItem.portion || "");
-          let officialPrice = cartUnitPrice;
-
-          if (dbProduct) {
-            const dbBase = Number(dbProduct.price_250g || dbProduct.base_price || dbProduct.price || 0);
-            const isHalfKilo = /نصف|500|half/i.test(portionText);
-            const isOneKilo = /(1\s*كجم|1\s*كيلو|كيلو|1000|1\s*kg|kilo)/i.test(portionText) && !/ربع|نصف/i.test(portionText);
-
-            if (isHalfKilo) {
-              if (Number(dbProduct.price_500g) > 0) {
-                officialPrice = Number(dbProduct.price_500g);
-              } else if (cartUnitPrice > dbBase) {
-                officialPrice = cartUnitPrice;
-              } else {
-                officialPrice = dbBase * 2;
-              }
-            } else if (isOneKilo) {
-              if (Number(dbProduct.price_1kg) > 0) {
-                officialPrice = Number(dbProduct.price_1kg);
-              } else if (cartUnitPrice > dbBase) {
-                officialPrice = cartUnitPrice;
-              } else {
-                officialPrice = dbBase * 4;
-              }
-            } else {
-              officialPrice = cartUnitPrice > 0 ? cartUnitPrice : dbBase;
-            }
-          }
-
-          const itemTotal = officialPrice * Number(cartItem.quantity || 1);
-
-          verifiedSubtotal += itemTotal;
-          verifiedItems.push({
-            title: cartItem.title,
-            portion: cartItem.portionNote || cartItem.portion || "افتراضي",
-            portionNote: cartItem.portionNote || "الحجم القياسي",
-            quantity: Number(cartItem.quantity || 1),
-            price: officialPrice,
-          });
-        }
-      }
-
-      let verifiedDiscount = 0;
-      if (appliedCouponCode) {
-        const { data: couponData } = await supabase
-          .from("coupons")
-          .select("discount_percent")
-          .eq("code", appliedCouponCode)
-          .maybeSingle();
-
-        if (couponData?.discount_percent) {
-          verifiedDiscount = (verifiedSubtotal * Number(couponData.discount_percent)) / 100;
-        }
-      }
-
-      const combinedNotes = [
-        deliveryMode === "pickup" ? "[استلام من الفرع]" : "[توصيل للمنزل]",
-        notes.trim(),
-        appliedCouponCode ? `[Coupon: ${appliedCouponCode}]` : "",
-        mapsLink && deliveryMode === "delivery" ? `[GPS: ${mapsLink}]` : "",
-      ]
-        .filter(Boolean)
-        .join(" | ");
-
-      // 🛡️ احتساب المبالغ النهائية عبر المحرك المالي الموحد بدقة
-      const finalOrderFinancials = calculateOrderFinancials({
-        subtotal: verifiedSubtotal,
-        delivery_fee: deliveryMode === "delivery" ? 35 : 0,
-        discount_amount: verifiedDiscount,
-        notes: combinedNotes,
-        city,
+      // 🛡️ إرسال الطلب للسيرفر للتحقق من الأسعار والكوبونات وحفظه بأمان
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName,
+          phone,
+          city,
+          district,
+          street,
+          notes,
+          mapsLink,
+          isGift,
+          recipientName,
+          giftMessage,
+          deliveryMode,
+          paymentMethod,
+          appliedCouponCode,
+          cart,
+        }),
       });
 
-      const generatedId = `BDM-${Math.floor(100000 + Math.random() * 900000)}`;
-
-      // حمولة الطلب المحمية بجميع الحقول المالية الرسمية
-      const orderPayload = {
-        id: generatedId,
-        customer_name: customerName.trim(),
-        customer_phone: phone.trim(),
-        city: deliveryMode === "delivery" ? city.trim() : "استلام من الفرع",
-        district: deliveryMode === "delivery" ? district.trim() : "الفرع الرئيسي",
-        street: deliveryMode === "delivery" ? street.trim() : "استلام مباشر",
-        notes: combinedNotes,
-        is_gift: isGift,
-        recipient_name: isGift ? recipientName.trim() : null,
-        gift_message: isGift ? giftMessage.trim() : null,
-        items: verifiedItems,
-        subtotal: finalOrderFinancials.subtotal,
-        discount_amount: finalOrderFinancials.discount,
-        delivery_fee: finalOrderFinancials.deliveryFee,
-        total_amount: finalOrderFinancials.finalTotal,
-        payment_method: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
-        status: "pending",
-      };
-
-      const { error: insertError } = await supabase.from("orders").insert([orderPayload]);
-      if (insertError) throw insertError;
-
-      if (appliedCouponCode) {
-        const { data: couponData } = await supabase
-          .from("coupons")
-          .select("id, used_count")
-          .eq("code", appliedCouponCode)
-          .maybeSingle();
-
-        if (couponData) {
-          const isSingleUse = appliedCouponCode.startsWith("BADEM-") || appliedCouponCode.startsWith("LOYAL-");
-          await supabase
-            .from("coupons")
-            .update({
-              used_count: (couponData.used_count || 0) + 1,
-              is_used: isSingleUse,
-              is_active: !isSingleUse,
-            })
-            .eq("code", appliedCouponCode);
-        }
-
-        try {
-          const localCoupons = JSON.parse(localStorage.getItem("badem_saved_coupons") || "[]");
-          const filtered = localCoupons.filter((c: { code: string }) => c.code !== appliedCouponCode);
-          localStorage.setItem("badem_saved_coupons", JSON.stringify(filtered));
-        } catch {
-          // تجاوز صامت للتخزين المحلي
-        }
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (isAr ? "فشل تسجيل الطلب" : "Failed to place order"));
       }
 
+      const { orderId: generatedId, financials, verifiedItems } = result;
       setOrderId(generatedId);
 
+      // صياغة وتجهيز رسالة الواتساب الفاخرة بالبيانات الموثقة من السيرفر
       const waUrl = createWhatsAppUrl(
         generatedId,
-        finalOrderFinancials.subtotal,
-        finalOrderFinancials.discount,
-        finalOrderFinancials.finalTotal,
+        financials.subtotal,
+        financials.discount,
+        financials.finalTotal,
         verifiedItems
       );
       setBackupWhatsAppUrl(waUrl);
@@ -728,13 +546,13 @@ ${payMethodTitle}
           customerName: customerName.trim(),
           phone: phone.trim(),
           items: verifiedItems,
-          totalAmount: finalOrderFinancials.finalTotal,
+          totalAmount: financials.finalTotal,
           status: "pending",
           paymentMethod: paymentMethod === "bank_transfer" ? "تحويل بنكي" : "نقداً عند الاستلام",
         });
       }
 
-      // 📍 فحص وحفظ العنوان تلقائياً في الملف الشخصي إذا لم يكن مسجلاً مسبقاً
+      // حفظ عنوان التوصيل تلقائياً في حساب العميل
       if (deliveryMode === "delivery" && district.trim() && street.trim()) {
         const isAddressAlreadySaved = addresses.some(
           (a) =>

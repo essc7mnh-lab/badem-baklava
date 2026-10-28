@@ -64,7 +64,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
     product.is_out_of_stock === true
   );
 
-  // استخراج أسعار الأوزان إن وجدت لضمان تطابق سعر الكرت مع النافذة
+  // استخراج أسعار الأوزان
   const parsedWeights = useMemo<WeightPricesData | null>(() => {
     const raw = product.weight_prices ?? product.weightPrices;
     if (!raw) return null;
@@ -78,7 +78,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
     return raw as WeightPricesData;
   }, [product.weight_prices, product.weightPrices]);
 
-  // السعر الفعلي المعروض (يأخذ سعر الربع كيلو من weight_prices إن وُجد، وإلا يأخذ basePrice)
+  // السعر الفعلي المعروض
   const effectiveBasePrice = useMemo<number>(() => {
     const qPrice = Number(parsedWeights?.quarter);
     if (hasWeights && Number.isFinite(qPrice) && qPrice > 0) {
@@ -88,7 +88,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
     return Number.isFinite(base) && base > 0 ? base : 45;
   }, [parsedWeights, hasWeights, product.basePrice, product.base_price, product.price]);
 
-  // السعر الأصلي (المشطوب) قبل الخصم
+  // السعر الأصلي قبل الخصم
   const effectiveOriginalPrice = useMemo<number>(() => {
     const orig = Number(
       product.originalPrice ?? product.original_price ?? product.compare_at_price ?? 0
@@ -96,7 +96,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
     return Number.isFinite(orig) && orig > 0 ? orig : 0;
   }, [product.originalPrice, product.original_price, product.compare_at_price]);
 
-  // حساب نسبة الخصم الحقيقية إذا وجدت
+  // حساب نسبة الخصم
   const discountPercent =
     effectiveOriginalPrice > effectiveBasePrice && effectiveBasePrice > 0
       ? Math.round(((effectiveOriginalPrice - effectiveBasePrice) / effectiveOriginalPrice) * 100)
@@ -121,7 +121,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // منع الإضافة نهائياً في حال نفاذ الكمية
     if (isSoldOut) return;
 
     royalSound.playSuccessChime();
@@ -146,10 +145,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
       onClick={() => onOpenDetail(product)}
       className="bg-[#FAF5ED] rounded-3xl p-3 border border-[#4A0E17]/10 shadow-xs hover:shadow-md transition-all duration-300 flex flex-col justify-between cursor-pointer group relative"
     >
-      {/* إطار صورة المنتج الذكي مع شارة الخصم وزر المفضلة */}
+      {/* إطار صورة المنتج الذكي مع الشارات */}
       <div className="relative overflow-hidden rounded-2xl bg-white aspect-square w-full">
         
-        {/* تأثير وميض خافت أثناء تحميل الصورة */}
         {!imageLoaded && (
           <div className="absolute inset-0 bg-stone-100 animate-pulse" />
         )}
@@ -175,7 +173,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           </div>
         )}
 
-        {/* شارة نفذت الكمية العائمة على الصورة من الخارج */}
+        {/* شارة خيارات الأوزان الفاخرة أسفل الصورة */}
+        {hasWeights && !isSoldOut && (
+          <div className="absolute bottom-2 right-2 rtl:right-2 rtl:left-auto ltr:left-2 ltr:right-auto z-20 bg-black/55 backdrop-blur-md text-[#E5C058] border border-white/10 text-[9px] font-black px-2 py-0.5 rounded-lg shadow-sm flex items-center gap-1 group-hover:bg-[#4A0E17]/90 group-hover:text-white transition-colors duration-300">
+            <span>⚖️</span>
+            <span>{isAr ? "خيارات الأوزان" : "Weights available"}</span>
+          </div>
+        )}
+
+        {/* شارة نفذت الكمية */}
         {isSoldOut && (
           <div className="absolute inset-0 bg-black/30 backdrop-blur-[1.5px] z-10 flex items-center justify-center p-2">
             <span className="bg-[#4A0E17]/95 text-amber-200 border border-[#C59B27]/40 text-[10px] font-black px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
@@ -200,28 +206,43 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
         />
       </div>
 
-      {/* تفاصيل الاسم */}
-      <div className="pt-3 pb-1 space-y-1">
+      {/* تفاصيل الاسم وتوضيح الأوزان */}
+      <div className="pt-2.5 pb-1 space-y-1">
         <h4 className="font-bold text-xs sm:text-sm text-[#2D2321] group-hover:text-[#4A0E17] transition line-clamp-2 leading-tight">
           {title}
         </h4>
+
+        {/* سطر توضيحي ناعم لخيارات الأوزان */}
+        {hasWeights && (
+          <span className="text-[10px] text-stone-500 font-medium flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
+            <span>{isAr ? "متاح: ربع • نصف • كيلو" : "250g • 500g • 1kg"}</span>
+          </span>
+        )}
       </div>
 
       {/* الأسعار وزر الإضافة */}
       <div className="flex items-center justify-between pt-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xs sm:text-sm font-black text-[#4A0E17]">
-            {effectiveBasePrice.toFixed(2)} <span className="text-[10px] font-bold">{currencySymbol}</span>
-          </span>
-          
-          {effectiveOriginalPrice > effectiveBasePrice && (
-            <span className="text-[10px] text-stone-400 line-through font-medium">
-              {effectiveOriginalPrice.toFixed(2)}
+        <div className="flex flex-col">
+          {hasWeights && (
+            <span className="text-[9px] text-stone-400 font-bold -mb-0.5">
+              {isAr ? "ابتداءً من" : "From"}
             </span>
           )}
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xs sm:text-sm font-black text-[#4A0E17]">
+              {effectiveBasePrice.toFixed(2)} <span className="text-[10px] font-bold">{currencySymbol}</span>
+            </span>
+
+            {effectiveOriginalPrice > effectiveBasePrice && (
+              <span className="text-[10px] text-stone-400 line-through font-medium">
+                {effectiveOriginalPrice.toFixed(2)}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* زر الإضافة أو شارة التعطيل عند نفاذ الكمية */}
+        {/* زر الإضافة السريعة مع بقاء حركة الطيران كما هي */}
         {isSoldOut ? (
           <button
             type="button"
@@ -236,7 +257,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
             type="button"
             onClick={handleQuickAdd}
             className="w-7 h-7 rounded-full bg-[#4A0E17] hover:bg-[#36070E] text-white flex items-center justify-center shadow-md transition transform active:scale-90 hover:scale-110 cursor-pointer"
-            title="إضافة للسلة"
+            title="إضافة سريعة للسلة"
           >
             <Plus className="w-4 h-4 font-bold" />
           </button>

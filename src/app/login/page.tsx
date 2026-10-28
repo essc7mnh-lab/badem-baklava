@@ -27,28 +27,22 @@ export default function LoginPage() {
         return;
       }
 
-      // التحقق المباشر من جدول المشرفين في Supabase
-      const { data: adminData, error } = await supabase
-        .from("admins")
-        .select("*")
-        .eq("username", cleanUser)
-        .maybeSingle();
+      // استدعاء مسار السيرفر الآمن
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: cleanUser, password: cleanPass }),
+      });
 
-      if (error) {
-        console.error("Supabase Login Error:", error);
-        setLoginError("حدث خطأ أثناء الاتصال بقاعدة البيانات.");
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setLoginError(data.error || "اسم المستخدم أو كلمة المرور غير صحيحة.");
         setIsLoggingIn(false);
         return;
       }
 
-      if (!adminData || adminData.pin_code !== cleanPass) {
-        setLoginError("❌ اسم المستخدم أو كلمة المرور غير صحيحة.");
-        setIsLoggingIn(false);
-        return;
-      }
-
-      // الدخول بنجاح والانتقال فوراً للوحة الإدارة
-      sessionStorage.setItem("badem_admin_auth", "true");
+      // الانتقال للوحة التحكم
       router.replace("/admin");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "خطأ غير متوقع";
