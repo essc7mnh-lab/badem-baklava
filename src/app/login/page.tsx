@@ -11,46 +11,48 @@ export default function LoginPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+const handleAdminLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setLoginError(null);
+  setIsLoggingIn(true);
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-    setIsLoggingIn(true);
+  try {
+    const cleanUser = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
 
-    try {
-      const cleanUser = usernameInput.trim();
-      const cleanPass = passwordInput.trim();
-
-      if (!cleanUser || !cleanPass) {
-        setLoginError("يرجى إدخال اسم المستخدم وكلمة المرور.");
-        setIsLoggingIn(false);
-        return;
-      }
-
-      // استدعاء مسار السيرفر الآمن
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: cleanUser, password: cleanPass }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setLoginError(data.error || "اسم المستخدم أو كلمة المرور غير صحيحة.");
-        setIsLoggingIn(false);
-        return;
-      }
-
-      // الانتقال للوحة التحكم
-      router.replace("/admin");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "خطأ غير متوقع";
-      setLoginError("حدث خطأ أثناء الدخول: " + message);
-    } finally {
+    if (!cleanUser || !cleanPass) {
+      setLoginError("يرجى إدخال اسم المستخدم وكلمة المرور.");
       setIsLoggingIn(false);
+      return;
     }
-  };
+
+    // استدعاء مسار السيرفر الآمن
+    const res = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: cleanUser, password: cleanPass }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      setLoginError(data.error || "اسم المستخدم أو كلمة المرور غير صحيحة.");
+      setIsLoggingIn(false);
+      return;
+    }
+
+    // 🌟 السطر المنقذ: تخزين حالة الدخول لمطابقة فحص صفحة الإدارة
+    sessionStorage.setItem("badem_admin_auth", "true");
+
+    // الانتقال للوحة التحكم
+    window.location.href = "/admin";
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "خطأ غير متوقع";
+    setLoginError("حدث خطأ أثناء الدخول: " + message);
+  } finally {
+    setIsLoggingIn(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#FAF5ED] flex items-center justify-center p-4">
